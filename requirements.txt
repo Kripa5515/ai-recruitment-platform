@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+streamlit
+pydantic
+pydantic-settings
+python-dotenv
+openai
+google-genai
+pytest
