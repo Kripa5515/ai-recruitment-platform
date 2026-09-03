@@ -162,3 +162,40 @@ def test_get_resume_by_unknown_source_reference(db_session):
     )
 
     assert result is None
+
+def test_get_resumes_by_candidate_id(db_session):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+    from app.data.repositories.resume_repository import (
+        ResumeRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Kripa Kumar",
+        email="kripa@example.com",
+    )
+
+    resume_repository.create(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="a" * 64,
+        storage_path="storage/resumes/a.pdf",
+        source_type="upload",
+    )
+
+    resume = resume_repository.get_by_hash("a" * 64)
+
+    resume.candidate_id = candidate.id
+    db_session.commit()
+
+    resumes = resume_repository.get_by_candidate_id(
+        candidate.id
+    )
+
+    assert len(resumes) == 1
+    assert resumes[0].candidate_id == candidate.id

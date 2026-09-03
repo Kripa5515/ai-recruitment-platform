@@ -79,3 +79,15 @@ class ResumeRepository:
         result = self.db.execute(statement)
 
         return result.scalar_one_or_none()
+
+    def get_by_candidate_id(
+    self,
+    candidate_id: int,
+    ) -> list[Resume]:
+        statement = select(Resume).where(
+            Resume.candidate_id == candidate_id
+        ).order_by(Resume.id)
+
+        result = self.db.execute(statement)
+
+        return list(result.scalars().all())

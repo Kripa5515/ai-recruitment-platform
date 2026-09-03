@@ -1,10 +1,7 @@
 from datetime import datetime
-
-from sqlalchemy import DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.data.database import Base
-
 
 class Resume(Base):
     __tablename__ = "resumes"
@@ -72,4 +69,14 @@ class Resume(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
         nullable=False,
+    )
+
+    candidate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("candidates.id"),
+        nullable=True,
+    )
+
+    candidate: Mapped["Candidate | None"] = relationship(
+        "Candidate",
+        back_populates="resumes",
     )
