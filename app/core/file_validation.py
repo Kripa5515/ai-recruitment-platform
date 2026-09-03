@@ -1,9 +1,11 @@
 from pathlib import Path
 
+
 ALLOWED_EXTENSIONS = {
     ".pdf": "pdf",
     ".docx": "docx",
 }
+
 
 ALLOWED_CONTENT_TYPES = {
     "pdf": {
@@ -15,11 +17,14 @@ ALLOWED_CONTENT_TYPES = {
     },
 }
 
+
 MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
+
 class FileValidationError(ValueError):
     """Raised when an uploaded file fails validation."""
+
 
 def validate_resume_file(
     filename: str,
@@ -27,31 +32,50 @@ def validate_resume_file(
     file_content: bytes,
 ) -> str:
     """
-    Validate a resume file and return its normalized file type.
+    Validate an uploaded resume file.
 
-    Supported formats:
-    - PDF
-    - DOCX
+    Checks:
+    - File extension
+    - File size
+    - MIME/content type
+    - Basic file signature
+
+    Returns:
+        File type: "pdf" or "docx"
+
+    Raises:
+        FileValidationError:
+            If the uploaded file fails validation.
     """
+
+    # ---------------------------------------------------------
+    # Validate extension
+    # ---------------------------------------------------------
 
     extension = Path(filename).suffix.lower()
 
-    # 1. Extension validation
     if extension not in ALLOWED_EXTENSIONS:
         raise FileValidationError(
-            "Unsupported file type. Only PDF and DOCX files are allowed."
+            "Unsupported file type. "
+            "Only PDF and DOCX files are allowed."
         )
 
     file_type = ALLOWED_EXTENSIONS[extension]
 
-    # 2. File size validation
+    # ---------------------------------------------------------
+    # Validate file size
+    # ---------------------------------------------------------
+
     if len(file_content) > MAX_FILE_SIZE_BYTES:
         raise FileValidationError(
             f"File size exceeds the maximum allowed limit of "
             f"{MAX_FILE_SIZE_MB} MB."
         )
 
-    # 3. MIME type validation
+    # ---------------------------------------------------------
+    # Validate content type
+    # ---------------------------------------------------------
+
     allowed_content_types = ALLOWED_CONTENT_TYPES[file_type]
 
     if content_type not in allowed_content_types:
@@ -59,14 +83,23 @@ def validate_resume_file(
             f"Invalid content type for {file_type.upper()} file."
         )
 
-    # 4. File signature/content validation
+    # ---------------------------------------------------------
+    # Validate PDF signature
+    # ---------------------------------------------------------
+
     if file_type == "pdf":
+
         if not file_content.startswith(b"%PDF"):
             raise FileValidationError(
                 "Invalid PDF file content."
             )
 
+    # ---------------------------------------------------------
+    # Validate DOCX signature
+    # ---------------------------------------------------------
+
     elif file_type == "docx":
+
         if not file_content.startswith(b"PK"):
             raise FileValidationError(
                 "Invalid DOCX file content."
