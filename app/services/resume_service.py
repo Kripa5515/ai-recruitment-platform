@@ -60,63 +60,26 @@ class ResumeService:
         return self.repository.get_all()
 
     def upload_resume(
-        self,
-        filename: str,
-        content_type: str | None,
-        file_content: bytes,
+    self,
+    filename: str,
+    content_type: str | None,
+    file_content: bytes,
     ) -> Resume:
-        file_type = validate_resume_file(
+        resume, created = self.get_or_create_resume_from_file(
             filename=filename,
-            content_type=content_type,
             file_content=file_content,
+            content_type=content_type,
+            source_type="upload",
         )
 
-        file_hash = calculate_sha256(file_content)
-
-        existing_resume = self.repository.get_by_hash(file_hash)
-
-        if existing_resume is not None:
+        if not created:
             raise DuplicateResumeError(
                 "A resume with the same file already exists."
             )
 
-        # Extract resume text based on file type
-        if file_type == "pdf":
-            extracted_text = extract_pdf_text(file_content)
+        return resume
 
-        elif file_type == "docx":
-            extracted_text = extract_docx_text(file_content)
-
-        else:
-            extracted_text = ""
-
-        storage_filename = generate_storage_filename(
-            file_type=file_type,
-            file_hash=file_hash,
-        )
-
-        saved_file_path = save_resume_file(
-            filename=storage_filename,
-            file_content=file_content,
-        )
-
-        try:
-            resume = self.repository.create(
-                original_filename=filename,
-                file_type=file_type,
-                file_size=len(file_content),
-                file_hash=file_hash,
-                storage_path=str(saved_file_path),
-                source_type="upload",
-                extracted_text=extracted_text,
-                extraction_status="completed",
-            )
-
-            return resume
-
-        except Exception:
-            saved_file_path.unlink(missing_ok=True)
-            raise
+    
     def get_resume_by_storage_path(
     self,
     storage_path: str,
