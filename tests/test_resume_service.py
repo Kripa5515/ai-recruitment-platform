@@ -1,7 +1,55 @@
-from app.services.resume_service import ResumeService
-from app.services.exceptions import DuplicateResumeError
+import io
 from pathlib import Path
+
 import pytest
+import pymupdf
+from docx import Document
+
+from app.services.exceptions import DuplicateResumeError
+from app.services.resume_service import ResumeService
+
+
+def create_test_pdf(text: str) -> bytes:
+    """
+    Create a real PDF file in memory for testing.
+    """
+
+    document = pymupdf.open()
+
+    page = document.new_page()
+
+    page.insert_text(
+        (50, 50),
+        text,
+    )
+
+    file_content = document.tobytes()
+
+    document.close()
+
+    return file_content
+
+
+def create_test_docx() -> bytes:
+    """
+    Create a real DOCX file in memory for testing.
+    """
+
+    document = Document()
+
+    document.add_paragraph("Kripa Kumar")
+    document.add_paragraph("Senior PHP Laravel Developer")
+    document.add_paragraph("Python GenAI RAG Developer")
+    document.add_paragraph(
+        "Skills: PHP, Laravel, Python, PostgreSQL"
+    )
+
+    output = io.BytesIO()
+
+    document.save(output)
+
+    return output.getvalue()
+
 
 def test_create_resume(db_session):
     service = ResumeService(db_session)
@@ -90,9 +138,12 @@ def test_get_all_resumes(db_session):
 
     assert len(resumes) >= 2
 
+
 def test_create_duplicate_resume_hash(db_session):
     service = ResumeService(db_session)
+
     file_hash = "duplicate" + ("b" * 55)
+
     service.create_resume(
         original_filename="resume1.pdf",
         file_type="pdf",
@@ -110,11 +161,28 @@ def test_create_duplicate_resume_hash(db_session):
             storage_path="storage/resumes/resume2.pdf",
         )
 
-def test_upload_resume_creates_resume_and_saves_file(
+
+def test_upload_pdf_resume_creates_resume_and_extracts_text(
     db_session,
     tmp_path,
     monkeypatch,
 ):
+    """
+    Test complete PDF upload flow:
+
+    validation
+        ↓
+    hash calculation
+        ↓
+    duplicate check
+        ↓
+    PDF text extraction
+        ↓
+    file storage
+        ↓
+    database record
+    """
+
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
@@ -122,7 +190,11 @@ def test_upload_resume_creates_resume_and_saves_file(
 
     service = ResumeService(db_session)
 
-    file_content = b"%PDF-1.7 sample resume content"
+    file_content = create_test_pdf(
+        "Kripa Kumar\n"
+        "Senior PHP Laravel Developer\n"
+        "Python GenAI RAG Developer"
+    )
 
     resume = service.upload_resume(
         filename="kripa_resume.pdf",
@@ -131,23 +203,48 @@ def test_upload_resume_creates_resume_and_saves_file(
     )
 
     assert resume.id is not None
-    assert resume.original_filename == "kripa_resume.pdf"
-    assert resume.file_type == "pdf"
-    assert resume.file_size == len(file_content)
-    assert len(resume.file_hash) == 64
-    assert resume.storage_path.endswith(".pdf")
-    assert resume.extraction_status == "uploaded"
 
-    saved_file = tmp_path / resume.storage_path.split("/")[-1]
+    assert resume.original_filename == "kripa_resume.pdf"
+
+    assert resume.file_type == "pdf"
+
+    assert resume.file_size == len(file_content)
+
+    assert len(resume.file_hash) == 64
+
+    assert resume.storage_path.endswith(".pdf")
+
+    # Verify extracted text
+    assert resume.extracted_text is not None
+
+    assert "Kripa Kumar" in resume.extracted_text
+
+    assert "Senior PHP Laravel Developer" in resume.extracted_text
+
+    assert "Python GenAI RAG Developer" in resume.extracted_text
+
+    # Extraction should be completed
+    assert resume.extraction_status == "completed"
+
+    # Verify physical file exists
+    saved_file = tmp_path / Path(resume.storage_path).name
 
     assert saved_file.exists()
+
+    # Verify stored file is exactly the original bytes
     assert saved_file.read_bytes() == file_content
 
-def test_upload_duplicate_resume_is_rejected(
+
+def test_upload_duplicate_pdf_resume_is_rejected(
     db_session,
     tmp_path,
     monkeypatch,
 ):
+    """
+    Same file content should produce the same SHA-256 hash
+    and duplicate upload should be rejected.
+    """
+
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
@@ -155,7 +252,9 @@ def test_upload_duplicate_resume_is_rejected(
 
     service = ResumeService(db_session)
 
-    file_content = b"%PDF-1.7 duplicate resume content"
+    file_content = create_test_pdf(
+        "Duplicate Resume Test"
+    )
 
     # First upload
     first_resume = service.upload_resume(
@@ -172,17 +271,27 @@ def test_upload_duplicate_resume_is_rejected(
             file_content=file_content,
         )
 
-    # Same physical file should be used
+    # Only one physical file should exist
     stored_files = list(tmp_path.iterdir())
 
     assert len(stored_files) == 1
-    assert stored_files[0].name == Path(first_resume.storage_path).name
+
+    # Physical filename should be hash based
+    assert (
+        stored_files[0].name
+        == Path(first_resume.storage_path).name
+    )
+
 
 def test_upload_resume_rejects_unsupported_file(
     db_session,
     tmp_path,
     monkeypatch,
 ):
+    """
+    TXT files are not supported.
+    """
+
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
@@ -199,14 +308,23 @@ def test_upload_resume_rejects_unsupported_file(
             file_content=file_content,
         )
 
+    # No file should be saved
     assert list(tmp_path.iterdir()) == []
+
+    # No database record should be created
     assert service.get_all_resumes() == []
+
 
 def test_upload_resume_rejects_invalid_pdf(
     db_session,
     tmp_path,
     monkeypatch,
 ):
+    """
+    File has .pdf extension but does not contain
+    valid PDF signature.
+    """
+
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
@@ -214,7 +332,6 @@ def test_upload_resume_rejects_invalid_pdf(
 
     service = ResumeService(db_session)
 
-    # PDF extension hai, lekin actual PDF content nahi hai
     file_content = b"This is not a real PDF file"
 
     with pytest.raises(ValueError):
@@ -224,14 +341,22 @@ def test_upload_resume_rejects_invalid_pdf(
             file_content=file_content,
         )
 
+    # No file should be saved
     assert list(tmp_path.iterdir()) == []
+
+    # No database record should be created
     assert service.get_all_resumes() == []
 
-def test_upload_docx_resume_creates_resume_and_saves_file(
+
+def test_upload_docx_resume_creates_resume_and_extracts_text(
     db_session,
     tmp_path,
     monkeypatch,
 ):
+    """
+    Test complete DOCX upload and text extraction flow.
+    """
+
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
@@ -239,8 +364,8 @@ def test_upload_docx_resume_creates_resume_and_saves_file(
 
     service = ResumeService(db_session)
 
-    # Minimal valid DOCX/ZIP signature.
-    file_content = b"PK\x03\x04" + b"sample docx content"
+    # Create a REAL DOCX file
+    file_content = create_test_docx()
 
     resume = service.upload_resume(
         filename="kripa_resume.docx",
@@ -252,14 +377,72 @@ def test_upload_docx_resume_creates_resume_and_saves_file(
     )
 
     assert resume.id is not None
-    assert resume.original_filename == "kripa_resume.docx"
-    assert resume.file_type == "docx"
-    assert resume.file_size == len(file_content)
-    assert len(resume.file_hash) == 64
-    assert resume.storage_path.endswith(".docx")
-    assert resume.extraction_status == "uploaded"
 
+    assert resume.original_filename == "kripa_resume.docx"
+
+    assert resume.file_type == "docx"
+
+    assert resume.file_size == len(file_content)
+
+    assert len(resume.file_hash) == 64
+
+    assert resume.storage_path.endswith(".docx")
+
+    # Verify extracted text
+    assert resume.extracted_text is not None
+
+    assert "Kripa Kumar" in resume.extracted_text
+
+    assert "Senior PHP Laravel Developer" in resume.extracted_text
+
+    assert "Python GenAI RAG Developer" in resume.extracted_text
+
+    assert "PostgreSQL" in resume.extracted_text
+
+    # Extraction should be completed
+    assert resume.extraction_status == "completed"
+
+    # Verify physical file exists
     saved_file = tmp_path / Path(resume.storage_path).name
 
     assert saved_file.exists()
+
+    # Verify stored file is exactly the original bytes
     assert saved_file.read_bytes() == file_content
+
+
+def test_upload_resume_rejects_invalid_docx(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    """
+    File has .docx extension and ZIP signature,
+    but is not actually a valid DOCX document.
+    """
+
+    monkeypatch.setattr(
+        "app.core.storage.settings.STORAGE_ROOT",
+        str(tmp_path),
+    )
+
+    service = ResumeService(db_session)
+
+    # ZIP signature exists, but this is not a valid DOCX
+    file_content = b"PK\x03\x04" + b"invalid docx content"
+
+    with pytest.raises(ValueError):
+        service.upload_resume(
+            filename="resume.docx",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument"
+                ".wordprocessingml.document"
+            ),
+            file_content=file_content,
+        )
+
+    # Nothing should be stored
+    assert list(tmp_path.iterdir()) == []
+
+    # No database record should be created
+    assert service.get_all_resumes() == []

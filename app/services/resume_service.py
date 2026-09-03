@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from app.ai.extraction.pdf_extractor import extract_pdf_text
+from app.ai.extraction.docx_extractor import extract_docx_text
 from app.core.file_hash import calculate_sha256
 from app.core.file_validation import validate_resume_file
 from app.core.storage import save_resume_file
@@ -25,7 +27,6 @@ class ResumeService:
         extracted_text: str | None = None,
         extraction_status: str = "uploaded",
     ) -> Resume:
-
         existing_resume = self.repository.get_by_hash(file_hash)
 
         if existing_resume is not None:
@@ -60,18 +61,14 @@ class ResumeService:
         content_type: str | None,
         file_content: bytes,
     ) -> Resume:
-
-        # 1. Validate file
         file_type = validate_resume_file(
             filename=filename,
             content_type=content_type,
             file_content=file_content,
         )
 
-        # 2. Calculate SHA-256
         file_hash = calculate_sha256(file_content)
 
-        # 3. Check duplicate
         existing_resume = self.repository.get_by_hash(file_hash)
 
         if existing_resume is not None:
@@ -79,20 +76,27 @@ class ResumeService:
                 "A resume with the same file already exists."
             )
 
-        # 4. Generate physical storage filename
+        # Extract resume text based on file type
+        if file_type == "pdf":
+            extracted_text = extract_pdf_text(file_content)
+
+        elif file_type == "docx":
+            extracted_text = extract_docx_text(file_content)
+
+        else:
+            extracted_text = ""
+
         storage_filename = generate_storage_filename(
             file_type=file_type,
             file_hash=file_hash,
         )
 
-        # 5. Save physical file
         saved_file_path = save_resume_file(
             filename=storage_filename,
             file_content=file_content,
         )
 
         try:
-            # 6. Save metadata in database
             resume = self.repository.create(
                 original_filename=filename,
                 file_type=file_type,
@@ -100,12 +104,12 @@ class ResumeService:
                 file_hash=file_hash,
                 storage_path=str(saved_file_path),
                 source_type="upload",
-                extraction_status="uploaded",
+                extracted_text=extracted_text,
+                extraction_status="completed",
             )
 
             return resume
 
         except Exception:
-            # 7. DB failure -> remove physical file
             saved_file_path.unlink(missing_ok=True)
             raise
