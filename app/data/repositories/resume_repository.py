@@ -53,3 +53,29 @@ class ResumeRepository:
         statement = select(Resume).order_by(Resume.id)
         result = self.db.execute(statement)
         return list(result.scalars().all())
+
+    def get_by_storage_path(
+        self,
+        storage_path: str,
+    ) -> Resume | None:
+        statement = select(Resume).where(
+            Resume.storage_path == storage_path
+        )
+
+        result = self.db.execute(statement)
+
+        return result.scalar_one_or_none()
+
+    def get_by_source_reference(
+    self,
+    source_type: str,
+    source_reference: str,
+    ) -> Resume | None:
+        statement = select(Resume).where(
+            Resume.source_type == source_type,
+            Resume.source_reference == source_reference,
+        )
+
+        result = self.db.execute(statement)
+
+        return result.scalar_one_or_none()

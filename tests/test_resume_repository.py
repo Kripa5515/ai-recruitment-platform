@@ -101,3 +101,64 @@ def test_create_duplicate_resume_hash(db_session):
             file_hash=file_hash,
             storage_path="storage/resumes/resume2.pdf",
         )
+
+def test_get_resume_by_storage_path(db_session):
+    repository = ResumeRepository(db_session)
+
+    resume = repository.create(
+        original_filename="kripa_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="a" * 64,
+        storage_path="storage/resumes/" + "a" * 64 + ".pdf",
+    )
+
+    result = repository.get_by_storage_path(
+        resume.storage_path
+    )
+
+    assert result is not None
+    assert result.id == resume.id
+    assert result.storage_path == resume.storage_path
+
+def test_get_resume_by_unknown_storage_path(db_session):
+    repository = ResumeRepository(db_session)
+
+    result = repository.get_by_storage_path(
+        "storage/resumes/not-found.pdf"
+    )
+
+    assert result is None
+
+def test_get_resume_by_source_reference(db_session):
+    repository = ResumeRepository(db_session)
+
+    resume = repository.create(
+        original_filename="kripa_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="c" * 64,
+        storage_path="storage/resumes/" + "c" * 64 + ".pdf",
+        source_type="ats",
+        source_reference="ATS-12345",
+    )
+
+    result = repository.get_by_source_reference(
+        source_type="ats",
+        source_reference="ATS-12345",
+    )
+
+    assert result is not None
+    assert result.id == resume.id
+    assert result.source_type == "ats"
+    assert result.source_reference == "ATS-12345"
+
+def test_get_resume_by_unknown_source_reference(db_session):
+    repository = ResumeRepository(db_session)
+
+    result = repository.get_by_source_reference(
+        source_type="ats",
+        source_reference="NOT-FOUND",
+    )
+
+    assert result is None

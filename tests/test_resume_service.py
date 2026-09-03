@@ -446,3 +446,64 @@ def test_upload_resume_rejects_invalid_docx(
 
     # No database record should be created
     assert service.get_all_resumes() == []
+
+
+def test_get_resume_by_storage_path(db_session):
+    service = ResumeService(db_session)
+
+    resume = service.create_resume(
+        original_filename="kripa_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="b" * 64,
+        storage_path="storage/resumes/" + "b" * 64 + ".pdf",
+    )
+
+    result = service.get_resume_by_storage_path(
+        resume.storage_path
+    )
+
+    assert result is not None
+    assert result.id == resume.id
+    assert result.storage_path == resume.storage_path
+
+def test_get_unknown_resume_by_storage_path(db_session):
+    service = ResumeService(db_session)
+
+    result = service.get_resume_by_storage_path(
+        "storage/resumes/not-found.pdf"
+    )
+
+    assert result is None
+
+def test_get_resume_by_source_reference(db_session):
+    service = ResumeService(db_session)
+
+    resume = service.create_resume(
+        original_filename="kripa_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="d" * 64,
+        storage_path="storage/resumes/" + "d" * 64 + ".pdf",
+        source_type="ats",
+        source_reference="ATS-67890",
+    )
+
+    result = service.get_resume_by_source_reference(
+        source_type="ats",
+        source_reference="ATS-67890",
+    )
+
+    assert result is not None
+    assert result.id == resume.id
+    assert result.source_reference == "ATS-67890"
+
+def test_get_unknown_resume_by_source_reference(db_session):
+    service = ResumeService(db_session)
+
+    result = service.get_resume_by_source_reference(
+        source_type="ats",
+        source_reference="NOT-FOUND",
+    )
+
+    assert result is None

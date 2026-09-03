@@ -49,7 +49,10 @@ class ResumeService:
     def get_resume(self, resume_id: int) -> Resume | None:
         return self.repository.get_by_id(resume_id)
 
-    def get_resume_by_hash(self, file_hash: str) -> Resume | None:
+    def get_resume_by_hash(
+        self,
+        file_hash: str,
+    ) -> Resume | None:
         return self.repository.get_by_hash(file_hash)
 
     def get_all_resumes(self) -> list[Resume]:
@@ -113,3 +116,20 @@ class ResumeService:
         except Exception:
             saved_file_path.unlink(missing_ok=True)
             raise
+    def get_resume_by_storage_path(
+    self,
+    storage_path: str,
+    ) -> Resume | None:
+        return self.repository.get_by_storage_path(
+            storage_path
+        )
+
+    def get_resume_by_source_reference(
+    self,
+    source_type: str,
+    source_reference: str,
+    ) -> Resume | None:
+        return self.repository.get_by_source_reference(
+            source_type=source_type,
+            source_reference=source_reference,
+        )
