@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.api.schemas.job import JobCreate
+
+from app.api.routes.jobs import router as jobs_router
 
 app = FastAPI(
     title="AI Recruitment Platform",
@@ -9,13 +10,7 @@ app = FastAPI(
 @app.get("/health")
 def health_check():
     return {
-        "status" : "ok",
+        "status": "ok",
         "service": "ai-recruitment-platform",
     }
-
-@app.post("/jobs")
-def create_job(job: JobCreate):
-    return {
-        "message": "Job received successfully",
-        "job": job,
-    }
+app.include_router(jobs_router)
