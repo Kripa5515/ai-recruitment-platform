@@ -21,6 +21,10 @@ def create_job(
     return service.create_job(
         title=job.title,
         description=job.description,
+        company=job.company,
+        location=job.location,
+        experience_required=job.experience_required,
+        employment_type=job.employment_type,
     )
 
 @router.get("/", response_model=list[JobResponse])
@@ -57,6 +61,11 @@ def update_job(
         job_id=job_id,
         title=job.title,
         description=job.description,
+        company=job.company,
+        location=job.location,
+        experience_required=job.experience_required,
+        employment_type=job.employment_type,
+        status=job.status,
     )
 
     if updated_job is None:

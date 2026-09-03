@@ -7,12 +7,15 @@ class JobRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, title: str, description: str) -> Job:
+    def create(self, title: str, description: str, company: str, location: str, experience_required: str, employment_type: str,) -> Job:
         job = Job(
             title=title,
             description=description,
+            company=company,
+            location=location,
+            experience_required=experience_required,
+            employment_type=employment_type,
         )
-
         self.db.add(job)
         self.db.commit()
         self.db.refresh(job)
@@ -29,18 +32,20 @@ class JobRepository:
         result = self.db.execute(statement)
         return result.scalar_one_or_none()
 
-    def update(self, job_id: int, title: str, description: str,) -> Job | None:
+    def update(self, job_id: int, title: str, description: str, company: str, location: str, experience_required: str, employment_type: str, status: str,) -> Job | None:
         job = self.get_by_id(job_id)
-
         if job is None:
             return None
 
         job.title = title
         job.description = description
-
+        job.company = company
+        job.location = location
+        job.experience_required = experience_required
+        job.employment_type = employment_type
+        job.status = status
         self.db.commit()
         self.db.refresh(job)
-
         return job
 
     def delete(self, job_id: int) -> bool:
