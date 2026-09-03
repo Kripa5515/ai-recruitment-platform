@@ -78,7 +78,10 @@ def validate_resume_file(
 
     allowed_content_types = ALLOWED_CONTENT_TYPES[file_type]
 
-    if content_type not in allowed_content_types:
+    if (
+        content_type is not None
+        and content_type not in allowed_content_types
+    ):
         raise FileValidationError(
             f"Invalid content type for {file_type.upper()} file."
         )

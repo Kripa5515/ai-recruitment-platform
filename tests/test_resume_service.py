@@ -565,3 +565,58 @@ def test_get_or_create_resume_reuses_existing_resume(
     assert second_created is False
 
     assert second_resume.id == first_resume.id
+
+
+def test_ingest_resume_folder_creates_resumes(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    pdf_file = tmp_path / "kripa.pdf"
+    pdf_file.write_bytes(create_test_pdf("Kripa Kumar"))
+    docx_file = tmp_path / "john.docx"
+    docx_file.write_bytes(create_test_docx())
+    
+    storage_path = tmp_path / "storage"
+    monkeypatch.setattr(
+        "app.core.storage.settings.STORAGE_ROOT",
+        str(storage_path),
+    )
+
+    service = ResumeService(db_session)
+    resumes = service.ingest_resume_folder(tmp_path)
+    assert len(resumes) == 2
+    filenames = {
+        resume.original_filename
+        for resume in resumes
+    }
+
+    assert filenames == {
+        "kripa.pdf",
+        "john.docx",
+    }
+
+def test_ingest_resume_folder_reuses_existing_resumes(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    pdf_file = tmp_path / "kripa.pdf"
+    pdf_file.write_bytes(create_test_pdf("Kripa Kumar"))
+
+    storage_path = tmp_path / "storage"
+
+    monkeypatch.setattr(
+        "app.core.storage.settings.STORAGE_ROOT",
+        str(storage_path),
+    )
+
+    service = ResumeService(db_session)
+
+    first_result = service.ingest_resume_folder(tmp_path)
+    second_result = service.ingest_resume_folder(tmp_path)
+
+    assert len(first_result) == 1
+    assert len(second_result) == 1
+
+    assert first_result[0].id == second_result[0].id

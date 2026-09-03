@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-
+from pathlib import Path
 from app.ai.extraction.pdf_extractor import extract_pdf_text
 from app.ai.extraction.docx_extractor import extract_docx_text
 from app.core.file_hash import calculate_sha256
@@ -9,6 +9,7 @@ from app.core.storage_filename import generate_storage_filename
 from app.data.models.resume import Resume
 from app.data.repositories.resume_repository import ResumeRepository
 from app.services.exceptions import DuplicateResumeError
+from app.integrations.resume_folder_scanner import scan_resume_folder
 
 
 class ResumeService:
@@ -166,3 +167,98 @@ class ResumeService:
         )
 
         return resume, True 
+
+    def ingest_resume_folder(
+    self,
+    folder_path: str | Path,
+    ) -> list[Resume]:
+        """
+        Scan a folder and ingest all supported resume files.
+        """
+
+        resume_files = scan_resume_folder(folder_path)
+
+        resumes = []
+
+        for file_path in resume_files:
+            file_content = file_path.read_bytes()
+
+            resume, _ = self.get_or_create_resume_from_file(
+                filename=file_path.name,
+                file_content=file_content,
+                source_type="folder",
+                source_reference=str(file_path),
+            )
+
+            resumes.append(resume)
+
+        return resumes
+
+
+    def get_or_create_resume_from_file(
+    self,
+    filename: str,
+    file_content: bytes,
+    content_type: str | None = None,
+    source_type: str = "folder",
+    source_reference: str | None = None,
+    ) -> tuple[Resume, bool]:
+        """
+        Validate, process, and create/reuse a resume from file content.
+
+        Returns:
+            Tuple of:
+            - Resume record
+            - True if newly created, False if already existed
+        """
+
+        file_type = validate_resume_file(
+            filename=filename,
+            content_type=content_type,
+            file_content=file_content,
+        )
+
+        file_hash = calculate_sha256(file_content)
+
+        existing_resume = self.repository.get_by_hash(file_hash)
+
+        if existing_resume is not None:
+            return existing_resume, False
+
+        if file_type == "pdf":
+            extracted_text = extract_pdf_text(file_content)
+
+        elif file_type == "docx":
+            extracted_text = extract_docx_text(file_content)
+
+        else:
+            extracted_text = ""
+
+        storage_filename = generate_storage_filename(
+            file_type=file_type,
+            file_hash=file_hash,
+        )
+
+        saved_file_path = save_resume_file(
+            filename=storage_filename,
+            file_content=file_content,
+        )
+
+        try:
+            resume = self.repository.create(
+                original_filename=filename,
+                file_type=file_type,
+                file_size=len(file_content),
+                file_hash=file_hash,
+                storage_path=str(saved_file_path),
+                source_type=source_type,
+                source_reference=source_reference,
+                extracted_text=extracted_text,
+                extraction_status="completed",
+            )
+
+            return resume, True
+
+        except Exception:
+            saved_file_path.unlink(missing_ok=True)
+            raise
