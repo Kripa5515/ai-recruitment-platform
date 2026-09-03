@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.data.database import Base
 
@@ -74,6 +74,17 @@ class Resume(Base):
     candidate_id: Mapped[int | None] = mapped_column(
         ForeignKey("candidates.id"),
         nullable=True,
+    )
+
+    version: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
     )
 
     candidate: Mapped["Candidate | None"] = relationship(

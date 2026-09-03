@@ -199,3 +199,213 @@ def test_get_resumes_by_candidate_id(db_session):
 
     assert len(resumes) == 1
     assert resumes[0].candidate_id == candidate.id
+
+
+def test_get_latest_version_by_candidate_id(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Version Test",
+        email="version@example.com",
+    )
+
+    resume1 = resume_repository.create(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="1" * 64,
+        storage_path="storage/resumes/1.pdf",
+    )
+    resume1.candidate_id = candidate.id
+    resume1.version = 1
+    resume1.is_current = False
+    db_session.commit()
+
+    resume2 = resume_repository.create(
+        original_filename="resume_v2.pdf",
+        file_type="pdf",
+        file_size=200,
+        file_hash="2" * 64,
+        storage_path="storage/resumes/2.pdf",
+    )
+    resume2.candidate_id = candidate.id
+    resume2.version = 2
+    resume2.is_current = True
+    db_session.commit()
+
+    latest_version = resume_repository.get_latest_version_by_candidate_id(
+        candidate.id
+    )
+
+    assert latest_version == 2
+
+
+def test_get_current_resume_by_candidate_id(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Current Resume Test",
+        email="current@example.com",
+    )
+
+    old_resume = resume_repository.create(
+        original_filename="old_resume.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="3" * 64,
+        storage_path="storage/resumes/3.pdf",
+    )
+    old_resume.candidate_id = candidate.id
+    old_resume.version = 1
+    old_resume.is_current = False
+    db_session.commit()
+
+    current_resume = resume_repository.create(
+        original_filename="current_resume.pdf",
+        file_type="pdf",
+        file_size=200,
+        file_hash="4" * 64,
+        storage_path="storage/resumes/4.pdf",
+    )
+    current_resume.candidate_id = candidate.id
+    current_resume.version = 2
+    current_resume.is_current = True
+    db_session.commit()
+
+    result = resume_repository.get_current_resume_by_candidate_id(
+        candidate.id
+    )
+
+    assert result is not None
+    assert result.id == current_resume.id
+    assert result.version == 2
+    assert result.is_current is True
+
+
+def test_get_next_version_by_candidate_id(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Next Version Test",
+        email="next@example.com",
+    )
+
+    resume = resume_repository.create(
+        original_filename="resume.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="5" * 64,
+        storage_path="storage/resumes/5.pdf",
+    )
+    resume.candidate_id = candidate.id
+    resume.version = 3
+    resume.is_current = True
+    db_session.commit()
+
+    next_version = resume_repository.get_next_version_by_candidate_id(
+        candidate.id
+    )
+
+    assert next_version == 4
+
+
+def test_get_resume_versions_by_candidate_id(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="History Test",
+        email="history@example.com",
+    )
+
+    resume1 = resume_repository.create(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="6" * 64,
+        storage_path="storage/resumes/6.pdf",
+    )
+    resume1.candidate_id = candidate.id
+    resume1.version = 1
+    resume1.is_current = False
+    db_session.commit()
+
+    resume2 = resume_repository.create(
+        original_filename="resume_v2.pdf",
+        file_type="pdf",
+        file_size=200,
+        file_hash="7" * 64,
+        storage_path="storage/resumes/7.pdf",
+    )
+    resume2.candidate_id = candidate.id
+    resume2.version = 2
+    resume2.is_current = False
+    db_session.commit()
+
+    resume3 = resume_repository.create(
+        original_filename="resume_v3.pdf",
+        file_type="pdf",
+        file_size=300,
+        file_hash="8" * 64,
+        storage_path="storage/resumes/8.pdf",
+    )
+    resume3.candidate_id = candidate.id
+    resume3.version = 3
+    resume3.is_current = True
+    db_session.commit()
+
+    resumes = resume_repository.get_resume_versions_by_candidate_id(
+        candidate.id
+    )
+
+    assert len(resumes) == 3
+    assert resumes[0].version == 3
+    assert resumes[1].version == 2
+    assert resumes[2].version == 1
+
+
+def test_get_latest_version_for_candidate_without_resumes(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="No Resume",
+        email="noresume@example.com",
+    )
+
+    latest_version = resume_repository.get_latest_version_by_candidate_id(
+        candidate.id
+    )
+
+    assert latest_version == 0
+
+
+def test_get_next_version_for_candidate_without_resumes(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="First Resume",
+        email="firstresume@example.com",
+    )
+
+    next_version = resume_repository.get_next_version_by_candidate_id(
+        candidate.id
+    )
+
+    assert next_version == 1

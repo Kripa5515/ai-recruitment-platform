@@ -620,3 +620,172 @@ def test_ingest_resume_folder_reuses_existing_resumes(
     assert len(second_result) == 1
 
     assert first_result[0].id == second_result[0].id
+
+
+def test_create_versioned_resume_first_version(db_session):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    service = ResumeService(db_session)
+
+    candidate = candidate_repository.create(
+        name="Version Candidate",
+        email="version1@example.com",
+    )
+
+    resume, created = service.create_versioned_resume(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="v" * 64,
+        storage_path="storage/resumes/" + "v" * 64 + ".pdf",
+        candidate_id=candidate.id,
+    )
+
+    assert created is True
+    assert resume.id is not None
+    assert resume.candidate_id == candidate.id
+    assert resume.version == 1
+    assert resume.is_current is True
+
+def test_create_versioned_resume_creates_next_version(db_session):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    service = ResumeService(db_session)
+
+    candidate = candidate_repository.create(
+        name="Version Candidate",
+        email="version2@example.com",
+    )
+
+    resume1, created1 = service.create_versioned_resume(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="1" * 64,
+        storage_path="storage/resumes/" + "1" * 64 + ".pdf",
+        candidate_id=candidate.id,
+    )
+
+    resume2, created2 = service.create_versioned_resume(
+        original_filename="resume_v2.pdf",
+        file_type="pdf",
+        file_size=2000,
+        file_hash="2" * 64,
+        storage_path="storage/resumes/" + "2" * 64 + ".pdf",
+        candidate_id=candidate.id,
+    )
+
+    assert created1 is True
+    assert created2 is True
+
+    assert resume1.version == 1
+    assert resume2.version == 2
+
+def test_create_versioned_resume_marks_previous_as_not_current(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    service = ResumeService(db_session)
+
+    candidate = candidate_repository.create(
+        name="Current Test",
+        email="current@example.com",
+    )
+
+    resume1, _ = service.create_versioned_resume(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="a" * 64,
+        storage_path="storage/resumes/" + "a" * 64 + ".pdf",
+        candidate_id=candidate.id,
+    )
+
+    resume2, _ = service.create_versioned_resume(
+        original_filename="resume_v2.pdf",
+        file_type="pdf",
+        file_size=2000,
+        file_hash="b" * 64,
+        storage_path="storage/resumes/" + "b" * 64 + ".pdf",
+        candidate_id=candidate.id,
+    )
+
+    db_session.refresh(resume1)
+    db_session.refresh(resume2)
+
+    assert resume1.is_current is False
+    assert resume2.is_current is True
+
+def test_create_versioned_resume_reuses_duplicate(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    service = ResumeService(db_session)
+
+    candidate = candidate_repository.create(
+        name="Duplicate Version Test",
+        email="duplicate-version@example.com",
+    )
+
+    file_hash = "d" * 64
+
+    first_resume, first_created = (
+        service.create_versioned_resume(
+            original_filename="resume_v1.pdf",
+            file_type="pdf",
+            file_size=1000,
+            file_hash=file_hash,
+            storage_path="storage/resumes/" + file_hash + ".pdf",
+            candidate_id=candidate.id,
+        )
+    )
+
+    second_resume, second_created = (
+        service.create_versioned_resume(
+            original_filename="resume_same_content.pdf",
+            file_type="pdf",
+            file_size=1000,
+            file_hash=file_hash,
+            storage_path="storage/resumes/" + file_hash + ".pdf",
+            candidate_id=candidate.id,
+        )
+    )
+
+    assert first_created is True
+    assert second_created is False
+
+    assert second_resume.id == first_resume.id
+    assert second_resume.version == 1
+
+def test_create_versioned_resume_without_candidate(
+    db_session,
+):
+    service = ResumeService(db_session)
+
+    resume, created = service.create_versioned_resume(
+        original_filename="unmatched_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="n" * 64,
+        storage_path="storage/resumes/" + "n" * 64 + ".pdf",
+        candidate_id=None,
+    )
+
+    assert created is True
+    assert resume.candidate_id is None
+    assert resume.version is None
+    assert resume.is_current is True

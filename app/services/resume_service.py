@@ -14,6 +14,7 @@ from app.integrations.resume_folder_scanner import scan_resume_folder
 
 class ResumeService:
     def __init__(self, db: Session):
+        self.db = db
         self.repository = ResumeRepository(db)
 
     def create_resume(
@@ -46,6 +47,71 @@ class ResumeService:
             extracted_text=extracted_text,
             extraction_status=extraction_status,
         )
+
+
+    def create_versioned_resume(
+    self,
+    original_filename: str,
+    file_type: str,
+    file_size: int,
+    file_hash: str,
+    storage_path: str,
+    candidate_id: int | None,
+    source_type: str = "upload",
+    source_reference: str | None = None,
+    extracted_text: str | None = None,
+    extraction_status: str = "uploaded",
+    ) -> tuple[Resume, bool]:
+
+        existing_resume = self.repository.get_by_hash(
+            file_hash
+        )
+
+        if existing_resume is not None:
+            return existing_resume, False
+
+        try:
+            version = None
+
+            if candidate_id is not None:
+                current_resume = (
+                    self.repository.get_current_resume_by_candidate_id(
+                        candidate_id
+                    )
+                )
+
+                if current_resume is not None:
+                    current_resume.is_current = False
+
+                version = (
+                    self.repository.get_next_version_by_candidate_id(
+                        candidate_id
+                    )
+                )
+
+            resume = self.repository.create(
+                original_filename=original_filename,
+                file_type=file_type,
+                file_size=file_size,
+                file_hash=file_hash,
+                storage_path=storage_path,
+                source_type=source_type,
+                source_reference=source_reference,
+                extracted_text=extracted_text,
+                extraction_status=extraction_status,
+                candidate_id=candidate_id,
+                version=version,
+                is_current=True,
+            )
+
+            self.db.commit()
+            self.db.refresh(resume)
+
+            return resume, True
+
+        except Exception:
+            self.db.rollback()
+            raise
 
     def get_resume(self, resume_id: int) -> Resume | None:
         return self.repository.get_by_id(resume_id)
