@@ -7,7 +7,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.data.database import Base
-from app.data.models import Job
+from app.data import models
 
 
 # Alembic Config object
