@@ -30,3 +30,6 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# Uploaded resume files
+storage/resumes/*

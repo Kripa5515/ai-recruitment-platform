@@ -8,3 +8,7 @@ def test_gemini_api_key_loaded():
 
 def test_database_url_loaded():
     assert settings.DATABASE_URL
+
+def test_storage_config_loaded():
+    assert settings.STORAGE_ROOT == "storage/resumes"
+    assert settings.MAX_RESUME_FILE_SIZE_MB == 10

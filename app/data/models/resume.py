@@ -31,6 +31,7 @@ class Resume(Base):
     file_hash: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+        unique=True,
     )
 
     storage_path: Mapped[str] = mapped_column(
