@@ -507,3 +507,61 @@ def test_get_unknown_resume_by_source_reference(db_session):
     )
 
     assert result is None
+
+def test_get_or_create_resume_creates_new_resume(
+    db_session,
+):
+    service = ResumeService(db_session)
+
+    resume, created = service.get_or_create_resume(
+        original_filename="new_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="e" * 64,
+        storage_path=(
+            "storage/resumes/"
+            + "e" * 64
+            + ".pdf"
+        ),
+    )
+
+    assert created is True
+    assert resume.id is not None
+    assert resume.original_filename == "new_resume.pdf"
+
+def test_get_or_create_resume_reuses_existing_resume(
+    db_session,
+):
+    service = ResumeService(db_session)
+    first_resume, first_created = (
+        service.get_or_create_resume(
+            original_filename="resume.pdf",
+            file_type="pdf",
+            file_size=1000,
+            file_hash="f" * 64,
+            storage_path=(
+                "storage/resumes/"
+                + "f" * 64
+                + ".pdf"
+            ),
+        )
+    )
+
+    second_resume, second_created = (
+        service.get_or_create_resume(
+            original_filename="same_resume_different_name.pdf",
+            file_type="pdf",
+            file_size=1000,
+            file_hash="f" * 64,
+            storage_path=(
+                "storage/resumes/"
+                + "f" * 64
+                + ".pdf"
+            ),
+        )
+    )
+
+    assert first_created is True
+    assert second_created is False
+
+    assert second_resume.id == first_resume.id

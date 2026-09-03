@@ -133,3 +133,36 @@ class ResumeService:
             source_type=source_type,
             source_reference=source_reference,
         )
+
+    def get_or_create_resume(
+    self,
+    original_filename: str,
+    file_type: str,
+    file_size: int,
+    file_hash: str,
+    storage_path: str,
+    source_type: str = "upload",
+    source_reference: str | None = None,
+    extracted_text: str | None = None,
+    extraction_status: str = "uploaded",
+    ) -> tuple[Resume, bool]:
+        existing_resume = self.repository.get_by_hash(
+            file_hash
+        )
+
+        if existing_resume is not None:
+            return existing_resume, False
+
+        resume = self.repository.create(
+            original_filename=original_filename,
+            file_type=file_type,
+            file_size=file_size,
+            file_hash=file_hash,
+            storage_path=storage_path,
+            source_type=source_type,
+            source_reference=source_reference,
+            extracted_text=extracted_text,
+            extraction_status=extraction_status,
+        )
+
+        return resume, True 
