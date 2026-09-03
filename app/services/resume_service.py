@@ -291,3 +291,73 @@ class ResumeService:
         except Exception:
             saved_file_path.unlink(missing_ok=True)
             raise
+
+    def get_or_create_versioned_resume_from_file(
+    self,
+    filename: str,
+    file_content: bytes,
+    candidate_id: int | None,
+    content_type: str | None = None,
+    source_type: str = "upload",
+    source_reference: str | None = None,
+    ) -> tuple[Resume, bool]:
+        """
+        Validate, process, and create/reuse a versioned resume from file content.
+
+        Returns:
+            Tuple containing:
+            - Resume record
+            - True if newly created, False if already existed
+        """
+
+        file_type = validate_resume_file(
+            filename=filename,
+            content_type=content_type,
+            file_content=file_content,
+        )
+
+        file_hash = calculate_sha256(file_content)
+
+        existing_resume = self.repository.get_by_hash(file_hash)
+
+        if existing_resume is not None:
+            return existing_resume, False
+
+        if file_type == "pdf":
+            extracted_text = extract_pdf_text(file_content)
+
+        elif file_type == "docx":
+            extracted_text = extract_docx_text(file_content)
+
+        else:
+            extracted_text = ""
+
+        storage_filename = generate_storage_filename(
+            file_type=file_type,
+            file_hash=file_hash,
+        )
+
+        saved_file_path = save_resume_file(
+            filename=storage_filename,
+            file_content=file_content,
+        )
+
+        try:
+            resume, created = self.create_versioned_resume(
+                original_filename=filename,
+                file_type=file_type,
+                file_size=len(file_content),
+                file_hash=file_hash,
+                storage_path=str(saved_file_path),
+                candidate_id=candidate_id,
+                source_type=source_type,
+                source_reference=source_reference,
+                extracted_text=extracted_text,
+                extraction_status="completed",
+            )
+
+            return resume, created
+
+        except Exception:
+            saved_file_path.unlink(missing_ok=True)
+            raise

@@ -789,3 +789,139 @@ def test_create_versioned_resume_without_candidate(
     assert resume.candidate_id is None
     assert resume.version is None
     assert resume.is_current is True
+
+def test_get_or_create_versioned_resume_from_file_creates_first_version(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="File Version Candidate",
+        email="file-version@example.com",
+    )
+
+    service = ResumeService(db_session)
+
+    pdf_content = create_test_pdf(
+        "Python Laravel PostgreSQL Developer"
+    )
+
+    resume, created = (
+        service.get_or_create_versioned_resume_from_file(
+            filename="candidate_resume.pdf",
+            file_content=pdf_content,
+            candidate_id=candidate.id,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is True
+    assert resume.candidate_id == candidate.id
+    assert resume.version == 1
+    assert resume.is_current is True
+    assert resume.file_type == "pdf"
+    assert resume.extracted_text is not None
+    assert "Python" in resume.extracted_text
+
+def test_get_or_create_versioned_resume_from_file_creates_next_version(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Updated Resume Candidate",
+        email="updated-version@example.com",
+    )
+
+    service = ResumeService(db_session)
+
+    pdf_v1 = create_test_pdf(
+        "Python Developer with Laravel experience"
+    )
+
+    resume1, created1 = (
+        service.get_or_create_versioned_resume_from_file(
+            filename="resume_v1.pdf",
+            file_content=pdf_v1,
+            candidate_id=candidate.id,
+            content_type="application/pdf",
+        )
+    )
+
+    pdf_v2 = create_test_pdf(
+        "Senior Python Developer with Laravel and PostgreSQL"
+    )
+
+    resume2, created2 = (
+        service.get_or_create_versioned_resume_from_file(
+            filename="resume_v2.pdf",
+            file_content=pdf_v2,
+            candidate_id=candidate.id,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created1 is True
+    assert created2 is True
+
+    assert resume1.version == 1
+    assert resume2.version == 2
+
+    assert resume1.is_current is False
+    assert resume2.is_current is True
+
+    assert resume1.id != resume2.id
+
+
+def test_get_or_create_versioned_resume_from_file_reuses_duplicate(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Duplicate File Candidate",
+        email="duplicate-file@example.com",
+    )
+
+    service = ResumeService(db_session)
+
+    pdf_content = create_test_pdf(
+        "Python Developer with PostgreSQL experience"
+    )
+
+    resume1, created1 = (
+        service.get_or_create_versioned_resume_from_file(
+            filename="resume.pdf",
+            file_content=pdf_content,
+            candidate_id=candidate.id,
+            content_type="application/pdf",
+        )
+    )
+
+    resume2, created2 = (
+        service.get_or_create_versioned_resume_from_file(
+            filename="resume_copy.pdf",
+            file_content=pdf_content,
+            candidate_id=candidate.id,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created1 is True
+    assert created2 is False
+
+    assert resume2.id == resume1.id
+    assert resume2.version == 1
+    assert resume2.is_current is True
