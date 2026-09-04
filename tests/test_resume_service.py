@@ -925,3 +925,61 @@ def test_get_or_create_versioned_resume_from_file_reuses_duplicate(
     assert resume2.id == resume1.id
     assert resume2.version == 1
     assert resume2.is_current is True
+
+def test_duplicate_resume_does_not_extract_again(
+    db_session,
+    monkeypatch,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+    from app.services.resume_service import ResumeService
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Incremental Test",
+        email="incremental@example.com",
+    )
+
+    resume_service = ResumeService(db_session)
+
+    pdf_content = b"%PDF-1.7\nfake resume content"
+
+    extraction_calls = []
+
+    def fake_extract_pdf_text(file_content):
+        extraction_calls.append(file_content)
+        return "Fake extracted resume text"
+
+    monkeypatch.setattr(
+        "app.services.resume_service.extract_pdf_text",
+        fake_extract_pdf_text,
+    )
+
+    first_resume, first_created = (
+        resume_service.get_or_create_versioned_resume_from_file(
+            filename="incremental.pdf",
+            file_content=pdf_content,
+            candidate_id=candidate.id,
+        )
+    )
+
+    assert first_created is True
+    assert len(extraction_calls) == 1
+
+    second_resume, second_created = (
+        resume_service.get_or_create_versioned_resume_from_file(
+            filename="incremental.pdf",
+            file_content=pdf_content,
+            candidate_id=candidate.id,
+        )
+    )
+
+    assert second_created is False
+    assert second_resume.id == first_resume.id
+    assert second_resume.file_hash == first_resume.file_hash
+    assert second_resume.version == first_resume.version
+
+    # Extraction must NOT run again.
+    assert len(extraction_calls) == 1

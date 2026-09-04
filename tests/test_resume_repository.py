@@ -1,6 +1,7 @@
 from app.data.repositories.resume_repository import ResumeRepository
 import pytest
 from sqlalchemy.exc import IntegrityError
+from app.data.models.resume import Resume
 
 def test_create_resume(db_session):
     repository = ResumeRepository(db_session)
@@ -409,3 +410,289 @@ def test_get_next_version_for_candidate_without_resumes(db_session):
     )
 
     assert next_version == 1
+
+
+def test_get_current_resume_returns_latest_current_version(db_session):
+    from app.data.repositories.candidate_repository import CandidateRepository
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Current Version Test",
+        email="current-version@example.com",
+    )
+
+    resume_v1 = Resume(
+        original_filename="resume_v1.pdf",
+        file_type="pdf",
+        file_size=100,
+        file_hash="a" * 64,
+        storage_path="storage/resumes/a.pdf",
+        source_type="upload",
+        candidate_id=candidate.id,
+        version=1,
+        is_current=False,
+    )
+
+    resume_v2 = Resume(
+        original_filename="resume_v2.pdf",
+        file_type="pdf",
+        file_size=200,
+        file_hash="b" * 64,
+        storage_path="storage/resumes/b.pdf",
+        source_type="upload",
+        candidate_id=candidate.id,
+        version=2,
+        is_current=False,
+    )
+
+    resume_v3 = Resume(
+        original_filename="resume_v3.pdf",
+        file_type="pdf",
+        file_size=300,
+        file_hash="c" * 64,
+        storage_path="storage/resumes/c.pdf",
+        source_type="upload",
+        candidate_id=candidate.id,
+        version=3,
+        is_current=True,
+    )
+
+    db_session.add_all(
+        [
+            resume_v1,
+            resume_v2,
+            resume_v3,
+        ]
+    )
+
+    db_session.commit()
+
+    current_resume = (
+        resume_repository.get_current_resume_by_candidate_id(
+            candidate.id
+        )
+    )
+
+    assert current_resume is not None
+    assert current_resume.version == 3
+    assert current_resume.is_current is True
+    assert current_resume.original_filename == "resume_v3.pdf"
+
+
+
+def test_only_one_current_resume_exists_after_version_creation(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+    from app.services.resume_service import ResumeService
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="Consistency Test",
+        email="consistency@example.com",
+    )
+
+    resume_service = ResumeService(db_session)
+
+    resume_v1, created_v1 = (
+        resume_service.create_versioned_resume(
+            original_filename="resume_v1.pdf",
+            file_type="pdf",
+            file_size=100,
+            file_hash="d" * 64,
+            storage_path="storage/resumes/d.pdf",
+            candidate_id=candidate.id,
+        )
+    )
+
+    resume_v2, created_v2 = (
+        resume_service.create_versioned_resume(
+            original_filename="resume_v2.pdf",
+            file_type="pdf",
+            file_size=200,
+            file_hash="e" * 64,
+            storage_path="storage/resumes/e.pdf",
+            candidate_id=candidate.id,
+        )
+    )
+
+    assert created_v1 is True
+    assert created_v2 is True
+
+    db_session.expire_all()
+
+    current_resumes = (
+        db_session.query(Resume)
+        .filter(
+            Resume.candidate_id == candidate.id,
+            Resume.is_current.is_(True),
+        )
+        .all()
+    )
+
+    assert len(current_resumes) == 1
+    assert current_resumes[0].version == 2
+    assert current_resumes[0].id == resume_v2.id
+
+    old_resume = db_session.get(Resume, resume_v1.id)
+
+    assert old_resume is not None
+    assert old_resume.is_current is False
+
+
+def test_get_resume_versions_returns_history_in_descending_order(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="History Test",
+        email="history@example.com",
+    )
+
+    resumes = [
+        Resume(
+            original_filename="resume_v1.pdf",
+            file_type="pdf",
+            file_size=100,
+            file_hash="f" * 64,
+            storage_path="storage/resumes/f.pdf",
+            source_type="upload",
+            candidate_id=candidate.id,
+            version=1,
+            is_current=False,
+        ),
+        Resume(
+            original_filename="resume_v2.pdf",
+            file_type="pdf",
+            file_size=200,
+            file_hash="g" * 64,
+            storage_path="storage/resumes/g.pdf",
+            source_type="upload",
+            candidate_id=candidate.id,
+            version=2,
+            is_current=False,
+        ),
+        Resume(
+            original_filename="resume_v3.pdf",
+            file_type="pdf",
+            file_size=300,
+            file_hash="h" * 64,
+            storage_path="storage/resumes/h.pdf",
+            source_type="upload",
+            candidate_id=candidate.id,
+            version=3,
+            is_current=True,
+        ),
+    ]
+
+    db_session.add_all(resumes)
+    db_session.commit()
+
+    history = (
+        resume_repository.get_resume_versions_by_candidate_id(
+            candidate.id
+        )
+    )
+
+    assert len(history) == 3
+
+    assert [resume.version for resume in history] == [
+        3,
+        2,
+        1,
+    ]
+
+    assert history[0].is_current is True
+    assert history[1].is_current is False
+    assert history[2].is_current is False
+
+def test_get_current_resume_for_candidate_without_resumes(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+
+    candidate_repository = CandidateRepository(db_session)
+    resume_repository = ResumeRepository(db_session)
+
+    candidate = candidate_repository.create(
+        name="No Resume Candidate",
+        email="no-resume@example.com",
+    )
+
+    current_resume = (
+        resume_repository.get_current_resume_by_candidate_id(
+            candidate.id
+        )
+    )
+
+    assert current_resume is None
+
+
+def test_resume_versions_are_isolated_per_candidate(
+    db_session,
+):
+    from app.data.repositories.candidate_repository import (
+        CandidateRepository,
+    )
+    from app.services.resume_service import ResumeService
+
+    candidate_repository = CandidateRepository(db_session)
+
+    candidate_1 = candidate_repository.create(
+        name="Candidate One",
+        email="candidate-one@example.com",
+    )
+
+    candidate_2 = candidate_repository.create(
+        name="Candidate Two",
+        email="candidate-two@example.com",
+    )
+
+    resume_service = ResumeService(db_session)
+
+    resume_1, created_1 = (
+        resume_service.create_versioned_resume(
+            original_filename="candidate1_v1.pdf",
+            file_type="pdf",
+            file_size=100,
+            file_hash="i" * 64,
+            storage_path="storage/resumes/i.pdf",
+            candidate_id=candidate_1.id,
+        )
+    )
+
+    resume_2, created_2 = (
+        resume_service.create_versioned_resume(
+            original_filename="candidate2_v1.pdf",
+            file_type="pdf",
+            file_size=100,
+            file_hash="j" * 64,
+            storage_path="storage/resumes/j.pdf",
+            candidate_id=candidate_2.id,
+        )
+    )
+
+    assert created_1 is True
+    assert created_2 is True
+
+    assert resume_1.version == 1
+    assert resume_2.version == 1
+
+    assert resume_1.candidate_id == candidate_1.id
+    assert resume_2.candidate_id == candidate_2.id
+
+    assert resume_1.is_current is True
+    assert resume_2.is_current is True
