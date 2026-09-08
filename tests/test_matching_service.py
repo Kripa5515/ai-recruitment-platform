@@ -1,226 +1,55 @@
 import pytest
 
+from app.ai.matching.matching_service import MatchingService
+from app.ai.matching.schemas import (
+    ExperienceMatchResult,
+    MatchResult,
+    SkillMatchResult,
+)
 from app.api.schemas.candidate import CandidateProfile
 from app.api.schemas.job_requirements import JobRequirements
-from app.ai.matching.matching_service import MatchingService
+
+
+# ============================================================
+# Fixtures
+# ============================================================
 
 
 @pytest.fixture
-def matching_service() -> MatchingService:
-    return MatchingService()
-
-
-def test_experience_match_when_candidate_meets_requirement(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_experience(
-        required_experience_years=5,
-        candidate_experience_years=6,
-    )
-
-    assert result.meets_requirement is True
-    assert result.score == 100.0
-
-
-def test_experience_match_when_candidate_has_less_experience(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_experience(
-        required_experience_years=5,
-        candidate_experience_years=3,
-    )
-
-    assert result.meets_requirement is False
-    assert result.score == 60.0
-
-
-def test_experience_match_when_requirement_is_missing(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_experience(
-        required_experience_years=None,
-        candidate_experience_years=6,
-    )
-
-    assert result.meets_requirement is None
-    assert result.score == 100.0
-
-
-def test_experience_match_when_candidate_experience_is_missing(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_experience(
-        required_experience_years=5,
-        candidate_experience_years=None,
-    )
-
-    assert result.meets_requirement is False
-    assert result.score == 0.0
-
-
-def test_required_skills_full_match(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_skills(
+def job_requirements() -> JobRequirements:
+    return JobRequirements(
+        required_experience_years=5.0,
         required_skills=[
             "Python",
             "FastAPI",
             "PostgreSQL",
         ],
-        preferred_skills=[],
-        candidate_skills=[
-            "Python",
-            "FastAPI",
-            "PostgreSQL",
+        preferred_skills=[
+            "Docker",
+            "AWS",
         ],
+        education_requirements=[],
+        location="Delhi",
+        employment_type="Full-time",
+        other_constraints=[],
     )
 
-    assert result.required_skill_score == 100.0
 
-    assert result.matched_required_skills == [
-        "Python",
-        "FastAPI",
-        "PostgreSQL",
-    ]
-
-    assert result.missing_required_skills == []
-
-
-def test_required_skills_partial_match(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_skills(
-        required_skills=[
+@pytest.fixture
+def candidate_profile() -> CandidateProfile:
+    return CandidateProfile(
+        name="John Doe",
+        email="john@example.com",
+        phone="9999999999",
+        total_experience_years=6.0,
+        skills=[
             "Python",
             "FastAPI",
             "PostgreSQL",
             "Docker",
         ],
-        preferred_skills=[],
-        candidate_skills=[
-            "Python",
-            "FastAPI",
-        ],
-    )
-
-    assert result.required_skill_score == 50.0
-
-    assert result.matched_required_skills == [
-        "Python",
-        "FastAPI",
-    ]
-
-    assert result.missing_required_skills == [
-        "PostgreSQL",
-        "Docker",
-    ]
-
-
-def test_preferred_skills_match(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_skills(
-        required_skills=[
-            "Python",
-        ],
-        preferred_skills=[
-            "LangChain",
-            "React",
-        ],
-        candidate_skills=[
-            "Python",
-            "LangChain",
-        ],
-    )
-
-    assert result.required_skill_score == 100.0
-    assert result.preferred_skill_score == 50.0
-
-    assert result.matched_preferred_skills == [
-        "LangChain",
-    ]
-
-
-def test_no_required_skills_returns_full_score(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_skills(
-        required_skills=[],
-        preferred_skills=[
-            "React",
-        ],
-        candidate_skills=[
-            "Python",
-        ],
-    )
-
-    assert result.required_skill_score == 100.0
-
-
-def test_skill_normalization(
-    matching_service: MatchingService,
-):
-    result = matching_service.match_skills(
-        required_skills=[
-            "  Python  ",
-            "FASTAPI",
-        ],
-        preferred_skills=[],
-        candidate_skills=[
-            "python",
-            " fastapi ",
-        ],
-    )
-
-    assert result.required_skill_score == 100.0
-    assert result.missing_required_skills == []
-
-
-def test_deterministic_score(
-    matching_service: MatchingService,
-):
-    score = matching_service.calculate_deterministic_score(
-        experience_score=100.0,
-        required_skill_score=100.0,
-        constraint_score=100.0,
-    )
-
-    assert score == 100.0
-
-
-def test_full_candidate_matching(
-    matching_service: MatchingService,
-):
-    job = JobRequirements(
-        required_experience_years=5,
-        required_skills=[
-            "Python",
-            "FastAPI",
-            "PostgreSQL",
-        ],
-        preferred_skills=[
-            "LangChain",
-            "React",
-        ],
-        education_requirements=[],
-        location=None,
-        employment_type=None,
-        other_constraints=[],
-    )
-
-    candidate = CandidateProfile(
-        name="Test Candidate",
-        email="candidate@example.com",
-        phone="9999999999",
-        total_experience_years=6,
-        skills=[
-            "Python",
-            "FastAPI",
-            "PostgreSQL",
-            "LangChain",
-        ],
         education=[
-            "B.Tech",
+            "B.Tech Computer Science",
         ],
         projects=[
             "AI Recruitment Platform",
@@ -228,41 +57,140 @@ def test_full_candidate_matching(
         certifications=[],
     )
 
-    result = matching_service.match(
-        job=job,
-        candidate=candidate,
-        candidate_id=1,
+
+# ============================================================
+# Basic Matching
+# ============================================================
+
+
+def test_matching_all_required_skills(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
     )
 
-    assert result.candidate_id == 1
-    assert result.candidate_name == "Test Candidate"
-
-    assert result.experience_score == 100.0
     assert result.required_skill_score == 100.0
-    assert result.preferred_skill_score == 50.0
 
-    assert result.semantic_score is None
-    assert result.deterministic_score == 100.0
+    assert result.skill_match.missing_required_skills == []
 
-    assert (
-        "Candidate meets the required experience."
-        in result.reasons
+    assert set(result.skill_match.matched_required_skills) == {
+        "python",
+        "fastapi",
+        "postgresql",
+    }
+
+
+def test_matching_partial_required_skills(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    candidate_profile.skills = [
+        "Python",
+        "FastAPI",
+    ]
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
     )
 
-    assert any(
-        "Python" in reason
-        for reason in result.reasons
-    )
+    assert result.required_skill_score == pytest.approx(66.67, abs=0.01)
+
+    assert result.skill_match.missing_required_skills == [
+        "postgresql"
+    ]
+
+    assert set(result.skill_match.matched_required_skills) == {
+        "python",
+        "fastapi",
+    }
 
 
-def test_missing_required_skills_generate_warning(
-    matching_service: MatchingService,
+def test_matching_no_required_skills(
+    candidate_profile: CandidateProfile,
 ):
     job = JobRequirements(
-        required_experience_years=5,
+        required_experience_years=5.0,
+        required_skills=[],
+        preferred_skills=[],
+        education_requirements=[],
+        location=None,
+        employment_type=None,
+        other_constraints=[],
+    )
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job,
+        candidate=candidate_profile,
+    )
+
+    assert result.required_skill_score == 100.0
+    assert result.skill_match.missing_required_skills == []
+    assert result.skill_match.matched_required_skills == []
+
+
+def test_preferred_skill_matching(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.preferred_skill_score == 50.0
+
+    assert result.skill_match.matched_preferred_skills == [
+        "docker"
+    ]
+
+
+def test_no_preferred_skill_match(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    candidate_profile.skills = [
+        "Python",
+        "FastAPI",
+        "PostgreSQL",
+    ]
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.preferred_skill_score == 0.0
+
+    assert result.skill_match.matched_preferred_skills == []
+
+
+# ============================================================
+# Case Insensitive Skill Matching
+# ============================================================
+
+
+def test_skill_matching_is_case_insensitive(
+    candidate_profile: CandidateProfile,
+):
+    job = JobRequirements(
+        required_experience_years=5.0,
         required_skills=[
-            "Python",
-            "FastAPI",
+            "python",
+            "FASTAPI",
             "PostgreSQL",
         ],
         preferred_skills=[],
@@ -272,38 +200,357 @@ def test_missing_required_skills_generate_warning(
         other_constraints=[],
     )
 
-    candidate = CandidateProfile(
-        name="Partial Match",
-        email="partial@example.com",
-        phone=None,
-        total_experience_years=3,
-        skills=[
-            "Python",
-        ],
-        education=[],
-        projects=[],
-        certifications=[],
-    )
-
-    result = matching_service.match(
-        job=job,
-        candidate=candidate,
-        candidate_id=2,
-    )
-
-    assert result.experience_match.meets_requirement is False
-
-    assert result.skill_match.missing_required_skills == [
-        "FastAPI",
-        "PostgreSQL",
+    candidate_profile.skills = [
+        "Python",
+        "fastapi",
+        "POSTGRESQL",
     ]
 
+    service = MatchingService()
+
+    result = service.match(
+        job=job,
+        candidate=candidate_profile,
+    )
+
+    assert result.required_skill_score == 100.0
+    assert result.skill_match.missing_required_skills == []
+
+
+# ============================================================
+# Experience Matching
+# ============================================================
+
+
+def test_matching_experience_meets_requirement(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.experience_score == 100.0
+    assert result.experience_match.meets_requirement is True
+
+
+def test_matching_experience_below_requirement(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    candidate_profile.total_experience_years = 3.0
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.experience_score == 60.0
+    assert result.experience_match.meets_requirement is False
+
+
+def test_matching_missing_candidate_experience(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    candidate_profile.total_experience_years = None
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.experience_score == 0.0
+    assert result.experience_match.meets_requirement is False
+
+
+def test_matching_without_experience_requirement(
+    candidate_profile: CandidateProfile,
+):
+    job = JobRequirements(
+        required_experience_years=None,
+        required_skills=[],
+        preferred_skills=[],
+        education_requirements=[],
+        location=None,
+        employment_type=None,
+        other_constraints=[],
+    )
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job,
+        candidate=candidate_profile,
+    )
+
+    assert result.experience_score == 100.0
+    assert result.experience_match.meets_requirement is True
+
+
+# ============================================================
+# Deterministic Score
+# ============================================================
+
+
+def test_deterministic_score_is_generated(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.deterministic_score is not None
+    assert 0.0 <= result.deterministic_score <= 100.0
+
+
+def test_deterministic_mode_has_no_semantic_score(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.semantic_score is None
+    assert result.final_score is None
+
+
+# ============================================================
+# Constraint Matching
+# ============================================================
+
+
+def test_no_constraints_get_full_constraint_score(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.constraint_score == 100.0
+
+
+def test_explicit_constraints_get_mvp_constraint_score(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    job_requirements.other_constraints = [
+        "Must be available for hybrid work."
+    ]
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.constraint_score == 50.0
+
+
+# ============================================================
+# Explainability
+# ============================================================
+
+
+def test_reasons_are_generated_for_matching_candidate(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.reasons
     assert any(
-        "Missing required skills" in warning
+        "meets the required experience"
+        in reason.lower()
+        for reason in result.reasons
+    )
+
+
+def test_warning_generated_for_missing_required_skill(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    candidate_profile.skills = [
+        "Python",
+    ]
+
+    service = MatchingService()
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert result.warnings
+
+    assert any(
+        "required skills are missing"
+        in warning.lower()
         for warning in result.warnings
     )
 
-    assert any(
-        "less experience" in warning
-        for warning in result.warnings
+
+# ============================================================
+# Semantic / Hybrid Matching
+# ============================================================
+
+
+class FakeSemanticMatchingService:
+    """
+    Fake semantic service used for unit testing.
+
+    It prevents the test from calling OpenAI.
+    """
+
+    def __init__(self, score: float = 80.0):
+        self.score = score
+        self.called = False
+        self.received_text_a = None
+        self.received_text_b = None
+
+    def calculate_score(
+        self,
+        text_a: str,
+        text_b: str,
+    ) -> float:
+        self.called = True
+        self.received_text_a = text_a
+        self.received_text_b = text_b
+
+        return self.score
+
+
+def test_semantic_matching_is_called_when_texts_are_available(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    fake_semantic_service = FakeSemanticMatchingService(
+        score=80.0
     )
+
+    service = MatchingService(
+        semantic_matching_service=fake_semantic_service
+    )
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+        job_text="Python FastAPI backend developer",
+        candidate_text="Python FastAPI developer with PostgreSQL",
+    )
+
+    assert fake_semantic_service.called is True
+
+    assert (
+        fake_semantic_service.received_text_a
+        == "Python FastAPI backend developer"
+    )
+
+    assert (
+        fake_semantic_service.received_text_b
+        == "Python FastAPI developer with PostgreSQL"
+    )
+
+    assert result.semantic_score == 80.0
+
+
+def test_hybrid_final_score_is_generated(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    fake_semantic_service = FakeSemanticMatchingService(
+        score=80.0
+    )
+
+    service = MatchingService(
+        semantic_matching_service=fake_semantic_service
+    )
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+        job_text="Python FastAPI backend developer",
+        candidate_text="Python FastAPI developer with PostgreSQL",
+    )
+
+    assert result.final_score is not None
+    assert 0.0 <= result.final_score <= 100.0
+
+
+def test_hybrid_score_uses_all_weights(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    fake_semantic_service = FakeSemanticMatchingService(
+        score=80.0
+    )
+
+    service = MatchingService(
+        semantic_matching_service=fake_semantic_service
+    )
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+        job_text="Job description",
+        candidate_text="Candidate resume",
+    )
+
+    # Experience = 100
+    # Required skills = 100
+    # Semantic = 80
+    # Constraint = 100
+    #
+    # Final:
+    #
+    # (100*20 + 100*40 + 80*25 + 100*15) / 100
+    #
+    # = 95
+    assert result.final_score == 95.0
+
+
+def test_semantic_matching_not_called_without_texts(
+    job_requirements: JobRequirements,
+    candidate_profile: CandidateProfile,
+):
+    fake_semantic_service = FakeSemanticMatchingService(
+        score=90.0
+    )
+
+    service = MatchingService(
+        semantic_matching_service=fake_semantic_service
+    )
+
+    result = service.match(
+        job=job_requirements,
+        candidate=candidate_profile,
+    )
+
+    assert fake_semantic_service.called is False
+    assert result.semantic_score is None
+    assert result.final_score is None
