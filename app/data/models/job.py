@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Float, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.data.database import Base
@@ -9,7 +9,17 @@ from app.data.database import Base
 class Job(Base):
     __tablename__ = "jobs"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # =========================================================
+    # Primary Key
+    # =========================================================
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+    )
+
+    # =========================================================
+    # Basic Job Information
+    # =========================================================
 
     title: Mapped[str] = mapped_column(
         String(255),
@@ -46,6 +56,43 @@ class Job(Base):
         nullable=False,
         default="draft",
     )
+
+    # =========================================================
+    # Structured JD Requirements
+    # =========================================================
+
+    required_experience_years: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    required_skills: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    preferred_skills: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    education_requirements: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    other_constraints: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+
+    # =========================================================
+    # Timestamps
+    # =========================================================
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

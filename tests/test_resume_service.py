@@ -7,7 +7,7 @@ from docx import Document
 
 from app.services.exceptions import DuplicateResumeError
 from app.services.resume_service import ResumeService
-
+from app.api.schemas.candidate import CandidateProfile
 
 def create_test_pdf(text: str) -> bytes:
     """
@@ -54,32 +54,35 @@ def create_test_docx() -> bytes:
 def test_create_resume(db_session):
     service = ResumeService(db_session)
 
-    resume = service.create_resume(
+    resume, created = service.create_versioned_resume(
         original_filename="service_resume.pdf",
         file_type="pdf",
         file_size=1024,
         file_hash="1" * 64,
         storage_path="storage/resumes/service_resume.pdf",
+        extracted_text="Sample resume text",
     )
 
+    assert created is True
     assert resume.id is not None
     assert resume.original_filename == "service_resume.pdf"
     assert resume.file_type == "pdf"
     assert resume.file_size == 1024
     assert resume.file_hash == "1" * 64
     assert resume.source_type == "upload"
-    assert resume.extraction_status == "uploaded"
+    assert resume.extraction_status == "completed"
 
 
 def test_get_resume(db_session):
     service = ResumeService(db_session)
 
-    created = service.create_resume(
+    created, _ = service.create_versioned_resume(
         original_filename="resume.pdf",
         file_type="pdf",
         file_size=2000,
         file_hash="2" * 64,
         storage_path="storage/resumes/resume.pdf",
+        extracted_text="Sample resume text",
     )
 
     resume = service.get_resume(created.id)
@@ -93,12 +96,13 @@ def test_get_resume_by_hash(db_session):
 
     file_hash = "3" * 64
 
-    created = service.create_resume(
+    created, _ = service.create_versioned_resume(
         original_filename="resume.pdf",
         file_type="pdf",
         file_size=3000,
         file_hash=file_hash,
         storage_path="storage/resumes/resume.pdf",
+        extracted_text="Sample resume text",
     )
 
     resume = service.get_resume_by_hash(file_hash)
@@ -118,20 +122,22 @@ def test_get_unknown_resume(db_session):
 def test_get_all_resumes(db_session):
     service = ResumeService(db_session)
 
-    service.create_resume(
+    service.create_versioned_resume(
         original_filename="resume1.pdf",
         file_type="pdf",
         file_size=1000,
         file_hash="4" * 64,
         storage_path="storage/resumes/resume1.pdf",
+        extracted_text="Sample resume text 1",
     )
 
-    service.create_resume(
+    service.create_versioned_resume(
         original_filename="resume2.docx",
         file_type="docx",
         file_size=2000,
         file_hash="5" * 64,
         storage_path="storage/resumes/resume2.docx",
+        extracted_text="Sample resume text 2",
     )
 
     resumes = service.get_all_resumes()
@@ -144,22 +150,27 @@ def test_create_duplicate_resume_hash(db_session):
 
     file_hash = "duplicate" + ("b" * 55)
 
-    service.create_resume(
+    resume1, created1 = service.create_versioned_resume(
         original_filename="resume1.pdf",
         file_type="pdf",
         file_size=1000,
         file_hash=file_hash,
         storage_path="storage/resumes/resume1.pdf",
+        extracted_text="Sample resume text 1",
     )
 
-    with pytest.raises(DuplicateResumeError):
-        service.create_resume(
-            original_filename="resume2.pdf",
-            file_type="pdf",
-            file_size=2000,
-            file_hash=file_hash,
-            storage_path="storage/resumes/resume2.pdf",
-        )
+    resume2, created2 = service.create_versioned_resume(
+        original_filename="resume2.pdf",
+        file_type="pdf",
+        file_size=2000,
+        file_hash=file_hash,
+        storage_path="storage/resumes/resume2.pdf",
+        extracted_text="Sample resume text 2",
+    )
+
+    assert created1 is True
+    assert created2 is False
+    assert resume2.id == resume1.id
 
 
 def test_upload_pdf_resume_creates_resume_and_extracts_text(
@@ -196,12 +207,13 @@ def test_upload_pdf_resume_creates_resume_and_extracts_text(
         "Python GenAI RAG Developer"
     )
 
-    resume = service.upload_resume(
+    resume, created = service.get_or_create_resume_from_file(
         filename="kripa_resume.pdf",
         content_type="application/pdf",
         file_content=file_content,
     )
 
+    assert created is True
     assert resume.id is not None
 
     assert resume.original_filename == "kripa_resume.pdf"
@@ -242,7 +254,7 @@ def test_upload_duplicate_pdf_resume_is_rejected(
 ):
     """
     Same file content should produce the same SHA-256 hash
-    and duplicate upload should be rejected.
+    and duplicate upload should be reused.
     """
 
     monkeypatch.setattr(
@@ -257,19 +269,23 @@ def test_upload_duplicate_pdf_resume_is_rejected(
     )
 
     # First upload
-    first_resume = service.upload_resume(
+    first_resume, created1 = service.get_or_create_resume_from_file(
         filename="kripa_resume.pdf",
         content_type="application/pdf",
         file_content=file_content,
     )
 
-    # Second upload with exactly same content
-    with pytest.raises(DuplicateResumeError):
-        service.upload_resume(
-            filename="another_name.pdf",
-            content_type="application/pdf",
-            file_content=file_content,
-        )
+    assert created1 is True
+
+    # Second upload with exactly same content should reuse duplicate
+    second_resume, created2 = service.get_or_create_resume_from_file(
+        filename="another_name.pdf",
+        content_type="application/pdf",
+        file_content=file_content,
+    )
+
+    assert created2 is False
+    assert second_resume.id == first_resume.id
 
     # Only one physical file should exist
     stored_files = list(tmp_path.iterdir())
@@ -302,7 +318,7 @@ def test_upload_resume_rejects_unsupported_file(
     file_content = b"plain text resume"
 
     with pytest.raises(ValueError):
-        service.upload_resume(
+        service.get_or_create_resume_from_file(
             filename="resume.txt",
             content_type="text/plain",
             file_content=file_content,
@@ -335,7 +351,7 @@ def test_upload_resume_rejects_invalid_pdf(
     file_content = b"This is not a real PDF file"
 
     with pytest.raises(ValueError):
-        service.upload_resume(
+        service.get_or_create_resume_from_file(
             filename="resume.pdf",
             content_type="application/pdf",
             file_content=file_content,
@@ -367,7 +383,7 @@ def test_upload_docx_resume_creates_resume_and_extracts_text(
     # Create a REAL DOCX file
     file_content = create_test_docx()
 
-    resume = service.upload_resume(
+    resume, created = service.get_or_create_resume_from_file(
         filename="kripa_resume.docx",
         content_type=(
             "application/vnd.openxmlformats-officedocument"
@@ -376,6 +392,7 @@ def test_upload_docx_resume_creates_resume_and_extracts_text(
         file_content=file_content,
     )
 
+    assert created is True
     assert resume.id is not None
 
     assert resume.original_filename == "kripa_resume.docx"
@@ -432,7 +449,7 @@ def test_upload_resume_rejects_invalid_docx(
     file_content = b"PK\x03\x04" + b"invalid docx content"
 
     with pytest.raises(ValueError):
-        service.upload_resume(
+        service.get_or_create_resume_from_file(
             filename="resume.docx",
             content_type=(
                 "application/vnd.openxmlformats-officedocument"
@@ -451,15 +468,16 @@ def test_upload_resume_rejects_invalid_docx(
 def test_get_resume_by_storage_path(db_session):
     service = ResumeService(db_session)
 
-    resume = service.create_resume(
+    resume, _ = service.create_versioned_resume(
         original_filename="kripa_resume.pdf",
         file_type="pdf",
         file_size=1000,
         file_hash="b" * 64,
         storage_path="storage/resumes/" + "b" * 64 + ".pdf",
+        extracted_text="Sample text",
     )
 
-    result = service.get_resume_by_storage_path(
+    result = service.repository.get_by_storage_path(
         resume.storage_path
     )
 
@@ -470,7 +488,7 @@ def test_get_resume_by_storage_path(db_session):
 def test_get_unknown_resume_by_storage_path(db_session):
     service = ResumeService(db_session)
 
-    result = service.get_resume_by_storage_path(
+    result = service.repository.get_by_storage_path(
         "storage/resumes/not-found.pdf"
     )
 
@@ -479,7 +497,7 @@ def test_get_unknown_resume_by_storage_path(db_session):
 def test_get_resume_by_source_reference(db_session):
     service = ResumeService(db_session)
 
-    resume = service.create_resume(
+    resume, _ = service.create_versioned_resume(
         original_filename="kripa_resume.pdf",
         file_type="pdf",
         file_size=1000,
@@ -487,9 +505,10 @@ def test_get_resume_by_source_reference(db_session):
         storage_path="storage/resumes/" + "d" * 64 + ".pdf",
         source_type="ats",
         source_reference="ATS-67890",
+        extracted_text="Sample text",
     )
 
-    result = service.get_resume_by_source_reference(
+    result = service.repository.get_by_source_reference(
         source_type="ats",
         source_reference="ATS-67890",
     )
@@ -501,7 +520,7 @@ def test_get_resume_by_source_reference(db_session):
 def test_get_unknown_resume_by_source_reference(db_session):
     service = ResumeService(db_session)
 
-    result = service.get_resume_by_source_reference(
+    result = service.repository.get_by_source_reference(
         source_type="ats",
         source_reference="NOT-FOUND",
     )
@@ -513,7 +532,7 @@ def test_get_or_create_resume_creates_new_resume(
 ):
     service = ResumeService(db_session)
 
-    resume, created = service.get_or_create_resume(
+    resume, created = service.create_versioned_resume(
         original_filename="new_resume.pdf",
         file_type="pdf",
         file_size=1000,
@@ -523,6 +542,7 @@ def test_get_or_create_resume_creates_new_resume(
             + "e" * 64
             + ".pdf"
         ),
+        extracted_text="Sample text",
     )
 
     assert created is True
@@ -534,7 +554,7 @@ def test_get_or_create_resume_reuses_existing_resume(
 ):
     service = ResumeService(db_session)
     first_resume, first_created = (
-        service.get_or_create_resume(
+        service.create_versioned_resume(
             original_filename="resume.pdf",
             file_type="pdf",
             file_size=1000,
@@ -544,11 +564,12 @@ def test_get_or_create_resume_reuses_existing_resume(
                 + "f" * 64
                 + ".pdf"
             ),
+            extracted_text="Sample text",
         )
     )
 
     second_resume, second_created = (
-        service.get_or_create_resume(
+        service.create_versioned_resume(
             original_filename="same_resume_different_name.pdf",
             file_type="pdf",
             file_size=1000,
@@ -558,6 +579,7 @@ def test_get_or_create_resume_reuses_existing_resume(
                 + "f" * 64
                 + ".pdf"
             ),
+            extracted_text="Sample text",
         )
     )
 
@@ -983,3 +1005,187 @@ def test_duplicate_resume_does_not_extract_again(
 
     # Extraction must NOT run again.
     assert len(extraction_calls) == 1
+
+def test_create_candidate_and_resume_transactionally(
+    db_session,
+):
+    service = ResumeService(db_session)
+
+    profile = CandidateProfile(
+        name="Rahul Sharma",
+        email="rahul@example.com",
+        phone="9876543210",
+        total_experience_years=6.0,
+        skills=["PHP", "Laravel"],
+        education=["B.Tech"],
+        projects=["Recruitment Platform"],
+        certifications=["AWS"],
+    )
+
+    candidate, resume = service.create_candidate_and_resume(
+        profile=profile,
+        original_filename="rahul_resume.pdf",
+        file_type="pdf",
+        file_size=1000,
+        file_hash="a" * 64,
+        storage_path="storage/resumes/test.pdf",
+        extracted_text="Rahul Sharma PHP Laravel 6 years",
+    )
+
+    assert candidate.id is not None
+    assert candidate.email == "rahul@example.com"
+
+    assert resume.id is not None
+    assert resume.candidate_id == candidate.id
+    assert resume.version == 1
+    assert resume.is_current is True
+    assert resume.extraction_status == "completed"
+
+def test_process_resume_with_candidate_creates_candidate_and_resume(
+    db_session,
+    monkeypatch,
+):
+    service = ResumeService(db_session)
+
+    profile = CandidateProfile(
+        name="Rahul Sharma",
+        email="rahul@example.com",
+        phone="9876543210",
+        total_experience_years=6.0,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "extract_candidate_profile",
+        lambda text: profile,
+    )
+
+    file_content = b"%PDF-1.4 candidate resume content"
+
+    monkeypatch.setattr(
+        "app.services.resume_service.extract_pdf_text",
+        lambda content: "Rahul Sharma PHP Laravel 6 years",
+    )
+
+    candidate, resume, created = (
+        service.process_resume_with_candidate(
+            filename="rahul.pdf",
+            file_content=file_content,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is True
+    assert candidate.id is not None
+    assert candidate.email == "rahul@example.com"
+
+    assert resume.id is not None
+    assert resume.candidate_id == candidate.id
+    assert resume.version == 1
+    assert resume.is_current is True
+
+def test_process_resume_with_candidate_skips_llm_for_duplicate(
+    db_session,
+    monkeypatch,
+):
+    service = ResumeService(db_session)
+
+    file_content = b"%PDF-1.4 duplicate resume"
+
+    monkeypatch.setattr(
+        "app.services.resume_service.extract_pdf_text",
+        lambda content: "Duplicate Candidate",
+    )
+
+    first_profile = CandidateProfile(
+        name="Duplicate Candidate",
+        email="duplicate@example.com",
+        total_experience_years=5.0,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "extract_candidate_profile",
+        lambda text: first_profile,
+    )
+
+    first_candidate, first_resume, created = (
+        service.process_resume_with_candidate(
+            filename="duplicate.pdf",
+            file_content=file_content,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is True
+
+    def fail_if_called(text):
+        raise AssertionError("LLM extraction should not run")
+
+    monkeypatch.setattr(
+        service,
+        "extract_candidate_profile",
+        fail_if_called,
+    )
+
+    second_candidate, second_resume, created = (
+        service.process_resume_with_candidate(
+            filename="duplicate.pdf",
+            file_content=file_content,
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is False
+    assert second_resume.id == first_resume.id
+    assert second_candidate.id == first_candidate.id
+
+def test_process_resume_with_candidate_reuses_candidate_for_new_version(
+    db_session,
+    monkeypatch,
+):
+    service = ResumeService(db_session)
+
+    profile = CandidateProfile(
+        name="Amit Kumar",
+        email="amit@example.com",
+        total_experience_years=5.0,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "extract_candidate_profile",
+        lambda text: profile,
+    )
+
+    monkeypatch.setattr(
+        "app.services.resume_service.extract_pdf_text",
+        lambda content: "Amit Kumar resume",
+    )
+
+    first_candidate, first_resume, created = (
+        service.process_resume_with_candidate(
+            filename="amit_v1.pdf",
+            file_content=b"%PDF-1.4 version-one",
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is True
+    assert first_resume.version == 1
+
+    second_candidate, second_resume, created = (
+        service.process_resume_with_candidate(
+            filename="amit_v2.pdf",
+            file_content=b"%PDF-1.4 version-two",
+            content_type="application/pdf",
+        )
+    )
+
+    assert created is True
+    assert second_candidate.id == first_candidate.id
+    assert second_resume.candidate_id == first_candidate.id
+    assert second_resume.version == 2
+    assert second_resume.is_current is True
+
+    assert first_resume.is_current is False

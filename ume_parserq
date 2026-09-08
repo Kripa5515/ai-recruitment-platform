@@ -1,0 +1,268 @@
+[1mdiff --git a/app/api/routes/jobs.py b/app/api/routes/jobs.py[m
+[1mindex 3cfd5bb..8076ac9 100644[m
+[1m--- a/app/api/routes/jobs.py[m
+[1m+++ b/app/api/routes/jobs.py[m
+[36m@@ -1,17 +1,131 @@[m
+[31m-from fastapi import APIRouter, Depends[m
+[32m+[m[32mimport math[m
+[32m+[m
+[32m+[m[32mfrom fastapi import ([m
+[32m+[m[32m    APIRouter,[m
+[32m+[m[32m    Depends,[m
+[32m+[m[32m    File,[m
+[32m+[m[32m    HTTPException,[m
+[32m+[m[32m    Query,[m
+[32m+[m[32m    UploadFile,[m
+[32m+[m[32m)[m
+ from sqlalchemy.orm import Session[m
+ [m
+ from app.api.dependencies.database import get_db[m
+[32m+[m[32mfrom app.api.schemas.job import ([m
+[32m+[m[32m    JobCreate,[m
+[32m+[m[32m    JobResponse,[m
+[32m+[m[32m    JobUpdate,[m
+[32m+[m[32m)[m
+[32m+[m[32mfrom app.api.schemas.job_requirements import JobRequirements[m
+[32m+[m[32mfrom app.services.job_document_service import JobDocumentService[m
+ from app.services.job_service import JobService[m
+[31m-from app.api.schemas.job import JobCreate, JobResponse, JobUpdate[m
+[31m-from fastapi import APIRouter, Depends, HTTPException[m
+[32m+[m
+ [m
+ router = APIRouter([m
+     prefix="/jobs",[m
+     tags=["Jobs"],[m
+ )[m
+ [m
+[31m-@router.post("/", response_model=JobResponse)[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Analyze Job Description Text[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.post([m
+[32m+[m[32m    "/analyze",[m
+[32m+[m[32m    response_model=JobRequirements,[m
+[32m+[m[32m)[m
+[32m+[m[32mdef analyze_job_description([m
+[32m+[m[32m    job_description: str,[m
+[32m+[m[32m    db: Session = Depends(get_db),[m
+[32m+[m[32m):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Analyze an unstructured job description.[m
+[32m+[m
+[32m+[m[32m    This endpoint does NOT create a Job in the database.[m
+[32m+[m[32m    """[m
+[32m+[m
+[32m+[m[32m    service = JobService(db)[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        return service.analyze_jd([m
+[32m+[m[32m            job_description=job_description,[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    except ValueError as exc:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=400,[m
+[32m+[m[32m            detail=str(exc),[m
+[32m+[m[32m        ) from exc[m
+[32m+[m
+[32m+[m[32m    except Exception as exc:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=500,[m
+[32m+[m[32m            detail=f"Failed to analyze job description: {exc}",[m
+[32m+[m[32m        ) from exc[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Analyze Uploaded Job Description[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.post([m
+[32m+[m[32m    "/upload",[m
+[32m+[m[32m    response_model=JobRequirements,[m
+[32m+[m[32m)[m
+[32m+[m[32masync def analyze_uploaded_job_description([m
+[32m+[m[32m    file: UploadFile = File(...),[m
+[32m+[m[32m):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Upload a TXT, PDF or DOCX job description.[m
+[32m+[m
+[32m+[m[32m    The file is validated and converted into structured[m
+[32m+[m[32m    job requirements.[m
+[32m+[m
+[32m+[m[32m    This endpoint does NOT create a Job in the database.[m
+[32m+[m[32m    """[m
+[32m+[m
+[32m+[m[32m    if not file.filename:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=400,[m
+[32m+[m[32m            detail="Filename is required.",[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        file_content = await file.read()[m
+[32m+[m
+[32m+[m[32m        service = JobDocumentService()[m
+[32m+[m
+[32m+[m[32m        return service.analyze_file([m
+[32m+[m[32m            filename=file.filename,[m
+[32m+[m[32m            file_content=file_content,[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    except ([m
+[32m+[m[32m        ValueError,[m
+[32m+[m[32m        PDFExtractionError,[m
+[32m+[m[32m        DOCXExtractionError,[m
+[32m+[m[32m    ) as exc:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=400,[m
+[32m+[m[32m            detail=str(exc),[m
+[32m+[m[32m        ) from exc[m
+[32m+[m
+[32m+[m[32m    except Exception as exc:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=500,[m
+[32m+[m[32m            detail=f"Failed to process uploaded JD: {exc}",[m
+[32m+[m[32m        ) from exc[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Create Job[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.post([m
+[32m+[m[32m    "/",[m
+[32m+[m[32m    response_model=JobResponse,[m
+[32m+[m[32m)[m
+ def create_job([m
+     job: JobCreate,[m
+     db: Session = Depends(get_db),[m
+[36m@@ -25,21 +139,72 @@[m [mdef create_job([m
+         location=job.location,[m
+         experience_required=job.experience_required,[m
+         employment_type=job.employment_type,[m
+[32m+[m[32m        status=job.status,[m
+     )[m
+ [m
+[31m-@router.get("/", response_model=list[JobResponse])[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Get Jobs - Pagination[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.get("/")[m
+ def get_jobs([m
+[32m+[m[32m    page: int = Query([m
+[32m+[m[32m        default=1,[m
+[32m+[m[32m        ge=1,[m
+[32m+[m[32m    ),[m
+[32m+[m[32m    page_size: int = Query([m
+[32m+[m[32m        default=10,[m
+[32m+[m[32m        ge=1,[m
+[32m+[m[32m        le=100,[m
+[32m+[m[32m    ),[m
+[32m+[m[32m    search: str | None = Query([m
+[32m+[m[32m        default=None,[m
+[32m+[m[32m        description=([m
+[32m+[m[32m            "Search jobs by title, company, "[m
+[32m+[m[32m            "location or description"[m
+[32m+[m[32m        ),[m
+[32m+[m[32m    ),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     service = JobService(db)[m
+[31m-    return service.get_all_jobs()[m
+ [m
+[31m-@router.get("/{job_id}", response_model=JobResponse)[m
+[32m+[m[32m    jobs, total = service.get_paginated_jobs([m
+[32m+[m[32m        page=page,[m
+[32m+[m[32m        page_size=page_size,[m
+[32m+[m[32m        search=search,[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    total_pages = ([m
+[32m+[m[32m        math.ceil(total / page_size)[m
+[32m+[m[32m        if total > 0[m
+[32m+[m[32m        else 0[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    return {[m
+[32m+[m[32m        "items": jobs,[m
+[32m+[m[32m        "total": total,[m
+[32m+[m[32m        "page": page,[m
+[32m+[m[32m        "page_size": page_size,[m
+[32m+[m[32m        "total_pages": total_pages,[m
+[32m+[m[32m        "search": search,[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Get Single Job[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.get([m
+[32m+[m[32m    "/{job_id}",[m
+[32m+[m[32m    response_model=JobResponse,[m
+[32m+[m[32m)[m
+ def get_job([m
+     job_id: int,[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     service = JobService(db)[m
+[32m+[m
+     job = service.get_job(job_id)[m
+ [m
+     if job is None:[m
+[36m@@ -47,9 +212,18 @@[m [mdef get_job([m
+             status_code=404,[m
+             detail="Job not found",[m
+         )[m
+[32m+[m
+     return job[m
+ [m
+[31m-@router.put("/{job_id}", response_model=JobResponse)[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Update Job[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.put([m
+[32m+[m[32m    "/{job_id}",[m
+[32m+[m[32m    response_model=JobResponse,[m
+[32m+[m[32m)[m
+ def update_job([m
+     job_id: int,[m
+     job: JobUpdate,[m
+[36m@@ -73,12 +247,28 @@[m [mdef update_job([m
+             status_code=404,[m
+             detail="Job not found",[m
+         )[m
+[32m+[m
+     return updated_job[m
+ [m
+[31m-@router.delete("/{job_id}", status_code=204)[m
+[31m-def delete_job(job_id: int, db: Session = Depends(get_db),):[m
+[32m+[m
+[32m+[m[32m# =========================================================[m
+[32m+[m[32m# Delete Job[m
+[32m+[m[32m# =========================================================[m
+[32m+[m
+[32m+[m[32m@router.delete([m
+[32m+[m[32m    "/{job_id}",[m
+[32m+[m[32m    status_code=204,[m
+[32m+[m[32m)[m
+[32m+[m[32mdef delete_job([m
+[32m+[m[32m    job_id: int,[m
+[32m+[m[32m    db: Session = Depends(get_db),[m
+[32m+[m[32m):[m
+     service = JobService(db)[m
+[31m-    deleted = service.delete_job(job_id)[m
+[32m+[m
+[32m+[m[32m    deleted = service.delete_job([m
+[32m+[m[32m        job_id[m
+[32m+[m[32m    )[m
+[32m+[m
+     if not deleted:[m
+         raise HTTPException([m
+             status_code=404,[m

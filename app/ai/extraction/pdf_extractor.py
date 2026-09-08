@@ -1,5 +1,7 @@
-import pymupdf
+import fitz
+
 from app.services.exceptions import PDFExtractionError
+
 
 def extract_pdf_text(file_content: bytes) -> str:
     """
@@ -12,28 +14,39 @@ def extract_pdf_text(file_content: bytes) -> str:
         Extracted text from all PDF pages.
 
     Raises:
-        PDFExtractionError: If the PDF cannot be opened or processed.
+        PDFExtractionError: If the PDF cannot be opened,
+        processed, or contains no extractable text.
     """
 
     try:
-        document = pymupdf.open(
+        document = fitz.open(
             stream=file_content,
             filetype="pdf",
         )
 
         try:
-            pages_text = []
+            text_parts = []
 
             for page in document:
-                text = page.get_text()
+                text = page.get_text().strip()
 
                 if text:
-                    pages_text.append(text)
+                    text_parts.append(text)
 
-            return "\n".join(pages_text).strip()
+            extracted_text = "\n".join(text_parts).strip()
 
         finally:
             document.close()
+
+        if not extracted_text:
+            raise PDFExtractionError(
+                "PDF does not contain extractable text."
+            )
+
+        return extracted_text
+
+    except PDFExtractionError:
+        raise
 
     except Exception as exc:
         raise PDFExtractionError(

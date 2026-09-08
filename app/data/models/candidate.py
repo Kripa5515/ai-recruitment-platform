@@ -1,25 +1,15 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.data.database import Base
 
-if TYPE_CHECKING:
-    from app.data.models.candidate_certification import CandidateCertification
-    from app.data.models.candidate_education import CandidateEducation
-    from app.data.models.candidate_project import CandidateProject
-    from app.data.models.candidate_skill import CandidateSkill
-    from app.data.models.resume import Resume
-
 
 class Candidate(Base):
     __tablename__ = "candidates"
 
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-    )
+    id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str | None] = mapped_column(
         String(255),
@@ -33,6 +23,26 @@ class Candidate(Base):
 
     phone: Mapped[str | None] = mapped_column(
         String(50),
+        nullable=True,
+    )
+
+    whatsapp_number: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    linkedin_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    github_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    portfolio_url: Mapped[str | None] = mapped_column(
+        String(500),
         nullable=True,
     )
 

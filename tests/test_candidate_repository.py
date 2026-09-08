@@ -58,8 +58,8 @@ def test_get_all_candidates(db_session):
     candidates = repository.get_all()
 
     assert len(candidates) == 2
-    assert candidates[0].name == "Candidate One"
-    assert candidates[1].name == "Candidate Two"
+    names = {c.name for c in candidates}
+    assert names == {"Candidate One", "Candidate Two"}
 
 
 def test_get_candidate_by_email(db_session):

@@ -1,8 +1,14 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.database import get_db
-from app.api.schemas.resume import ResumeResponse
+from app.api.schemas.resume import (
+    ResumeResponse,
+    ResumeUploadItem,
+    ResumeUploadResponse,
+)
 from app.core.file_validation import FileValidationError
 from app.services.exceptions import (
     DOCXExtractionError,
@@ -20,45 +26,129 @@ router = APIRouter(
 
 @router.post(
     "/upload",
-    response_model=ResumeResponse,
+    response_model=ResumeUploadResponse,
 )
-def upload_resume(
-    file: UploadFile = File(...),
+async def upload_resumes(
+    files: Annotated[
+        list[UploadFile],
+        File(...),
+    ],
     db: Session = Depends(get_db),
 ):
     service = ResumeService(db)
 
-    try:
-        file_content = file.file.read()
+    items: list[ResumeUploadItem] = []
 
-        resume = service.upload_resume(
-            filename=file.filename or "unknown",
-            content_type=file.content_type,
-            file_content=file_content,
-        )
+    successful = 0
+    duplicates = 0
+    failed = 0
 
-        return resume
+    for file in files:
+        filename = file.filename or "unknown"
 
-    except DuplicateResumeError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=str(exc),
-        ) from exc
+        try:
+            file_content = await file.read()
 
-    except FileValidationError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
+            candidate, resume, created = (
+                service.process_resume_with_candidate(
+                    filename=filename,
+                    file_content=file_content,
+                    content_type=file.content_type,
+                )
+            )
 
-    except PDFExtractionError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=str(exc),
-        ) from exc
+            if created:
+                successful += 1
 
-    except DOCXExtractionError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=str(exc),
-        ) from exc
+                items.append(
+                    ResumeUploadItem(
+                        filename=filename,
+                        status="success",
+                        message="Resume processed successfully.",
+                        resume=resume,
+                        candidate_id=(
+                            candidate.id
+                            if candidate is not None
+                            else None
+                        ),
+                        candidate_name=(
+                            candidate.name
+                            if candidate is not None
+                            else None
+                        ),
+                    )
+                )
+
+            else:
+                duplicates += 1
+
+                items.append(
+                    ResumeUploadItem(
+                        filename=filename,
+                        status="duplicate",
+                        message="Duplicate resume already exists.",
+                        resume=resume,
+                        candidate_id=(
+                            candidate.id
+                            if candidate is not None
+                            else resume.candidate_id
+                        ),
+                        candidate_name=(
+                            candidate.name
+                            if candidate is not None
+                            else None
+                        ),
+                    )
+                )
+
+        except FileValidationError as exc:
+            failed += 1
+
+            items.append(
+                ResumeUploadItem(
+                    filename=filename,
+                    status="failed",
+                    message=str(exc),
+                )
+            )
+
+        except PDFExtractionError as exc:
+            failed += 1
+
+            items.append(
+                ResumeUploadItem(
+                    filename=filename,
+                    status="failed",
+                    message=str(exc),
+                )
+            )
+
+        except DOCXExtractionError as exc:
+            failed += 1
+
+            items.append(
+                ResumeUploadItem(
+                    filename=filename,
+                    status="failed",
+                    message=str(exc),
+                )
+            )
+
+        except Exception as exc:
+            failed += 1
+
+            items.append(
+                ResumeUploadItem(
+                    filename=filename,
+                    status="failed",
+                    message=f"Unexpected error: {exc}",
+                )
+            )
+
+    return ResumeUploadResponse(
+        total_files=len(files),
+        successful=successful,
+        duplicates=duplicates,
+        failed=failed,
+        items=items,
+    )

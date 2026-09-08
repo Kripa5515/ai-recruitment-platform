@@ -1,5 +1,4 @@
 from collections.abc import Generator
-
 from app.data.database import SessionLocal
 
 

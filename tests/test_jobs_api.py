@@ -1,14 +1,25 @@
+import pytest
 from fastapi.testclient import TestClient
 
+from app.api.dependencies.database import get_db
 from app.api.main import app
 
 
-client = TestClient(app)
+@pytest.fixture
+def client(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_create_job_api():
+def test_create_job_api(client):
     response = client.post(
-        "/jobs/",
+        "/api/v1/jobs/",
         json={
             "title": "GenAI Developer",
             "description": "Looking for a Python and GenAI developer.",
@@ -35,19 +46,43 @@ def test_create_job_api():
     assert data["status"] == "draft"
 
 
-def test_get_all_jobs_api():
-    response = client.get("/jobs/")
+def test_get_all_jobs_api(client):
+    client.post(
+        "/api/v1/jobs/",
+        json={
+            "title": "Job For Listing",
+            "description": "Job description.",
+            "company": "ABC Corp",
+            "location": "Noida",
+            "experience_required": "3+ years",
+            "employment_type": "Full-time",
+        },
+    )
+
+    response = client.get("/api/v1/jobs/")
 
     assert response.status_code == 200
 
     data = response.json()
 
-    assert isinstance(data, list)
+    assert isinstance(data, dict)
+
+    assert "items" in data
+    assert "total" in data
+    assert "page" in data
+    assert "page_size" in data
+    assert "total_pages" in data
+
+    assert isinstance(data["items"], list)
+    assert isinstance(data["total"], int)
+    assert data["page"] == 1
+    assert data["page_size"] == 10
+    assert data["total"] >= 1
 
 
-def test_get_job_api():
+def test_get_job_api(client):
     create_response = client.post(
-        "/jobs/",
+        "/api/v1/jobs/",
         json={
             "title": "AI Engineer",
             "description": "Python, RAG and LLM developer.",
@@ -61,10 +96,9 @@ def test_get_job_api():
     assert create_response.status_code == 200
 
     created_job = create_response.json()
-
     job_id = created_job["id"]
 
-    response = client.get(f"/jobs/{job_id}")
+    response = client.get(f"/api/v1/jobs/{job_id}")
 
     assert response.status_code == 200
 
@@ -76,8 +110,8 @@ def test_get_job_api():
     assert data["location"] == "Bangalore"
 
 
-def test_get_job_not_found():
-    response = client.get("/jobs/999999")
+def test_get_job_not_found(client):
+    response = client.get("/api/v1/jobs/999999")
 
     assert response.status_code == 404
     assert response.json() == {
@@ -85,9 +119,9 @@ def test_get_job_not_found():
     }
 
 
-def test_update_job_api():
+def test_update_job_api(client):
     create_response = client.post(
-        "/jobs/",
+        "/api/v1/jobs/",
         json={
             "title": "Python Developer",
             "description": "Python backend developer.",
@@ -101,11 +135,10 @@ def test_update_job_api():
     assert create_response.status_code == 200
 
     created_job = create_response.json()
-
     job_id = created_job["id"]
 
     response = client.put(
-        f"/jobs/{job_id}",
+        f"/api/v1/jobs/{job_id}",
         json={
             "title": "Senior Python Developer",
             "description": "Python, FastAPI and PostgreSQL developer.",
@@ -133,9 +166,9 @@ def test_update_job_api():
     assert data["status"] == "active"
 
 
-def test_update_job_not_found():
+def test_update_job_not_found(client):
     response = client.put(
-        "/jobs/999999",
+        "/api/v1/jobs/999999",
         json={
             "title": "Senior Developer",
             "description": "Updated description.",
@@ -153,9 +186,9 @@ def test_update_job_not_found():
     }
 
 
-def test_delete_job_api():
+def test_delete_job_api(client):
     create_response = client.post(
-        "/jobs/",
+        "/api/v1/jobs/",
         json={
             "title": "Temporary Developer",
             "description": "This job will be deleted.",
@@ -169,21 +202,21 @@ def test_delete_job_api():
     assert create_response.status_code == 200
 
     created_job = create_response.json()
-
     job_id = created_job["id"]
 
-    response = client.delete(f"/jobs/{job_id}")
+    response = client.delete(f"/api/v1/jobs/{job_id}")
 
     assert response.status_code == 204
 
-    get_response = client.get(f"/jobs/{job_id}")
+    get_response = client.get(f"/api/v1/jobs/{job_id}")
 
     assert get_response.status_code == 404
 
 
-def test_delete_job_not_found():
-    response = client.delete("/jobs/999999")
+def test_delete_job_not_found(client):
+    response = client.delete("/api/v1/jobs/999999")
+
     assert response.status_code == 404
     assert response.json() == {
         "detail": "Job not found"
-    }
+    }

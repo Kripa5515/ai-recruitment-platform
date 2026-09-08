@@ -506,6 +506,7 @@ def test_only_one_current_resume_exists_after_version_creation(
             file_size=100,
             file_hash="d" * 64,
             storage_path="storage/resumes/d.pdf",
+            extracted_text="Resume v1 text",
             candidate_id=candidate.id,
         )
     )
@@ -517,6 +518,7 @@ def test_only_one_current_resume_exists_after_version_creation(
             file_size=200,
             file_hash="e" * 64,
             storage_path="storage/resumes/e.pdf",
+            extracted_text="Resume v2 text",
             candidate_id=candidate.id,
         )
     )
@@ -670,6 +672,7 @@ def test_resume_versions_are_isolated_per_candidate(
             file_size=100,
             file_hash="i" * 64,
             storage_path="storage/resumes/i.pdf",
+            extracted_text="Candidate 1 text",
             candidate_id=candidate_1.id,
         )
     )
@@ -681,6 +684,7 @@ def test_resume_versions_are_isolated_per_candidate(
             file_size=100,
             file_hash="j" * 64,
             storage_path="storage/resumes/j.pdf",
+            extracted_text="Candidate 2 text",
             candidate_id=candidate_2.id,
         )
     )

@@ -35,6 +35,9 @@ def create_test_pdf(
     return file_content
 
 
+from app.api.schemas.candidate import CandidateProfile
+
+
 def test_upload_resume_api(
     db_session,
     tmp_path,
@@ -49,6 +52,18 @@ def test_upload_resume_api(
         str(tmp_path),
     )
 
+    dummy_profile = CandidateProfile(
+        name="Kripa Kumar",
+        email="kripa@example.com",
+        phone="9876543210",
+        total_experience_years=6.5,
+        skills=["PHP", "Laravel", "Python"],
+    )
+    monkeypatch.setattr(
+        "app.services.resume_service.ResumeService.extract_candidate_profile",
+        lambda self, text: dummy_profile,
+    )
+
     def override_get_db():
         yield db_session
 
@@ -60,55 +75,53 @@ def test_upload_resume_api(
         file_content = create_test_pdf()
 
         response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "kripa_resume.pdf",
-                    io.BytesIO(file_content),
-                    "application/pdf",
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
+                    (
+                        "kripa_resume.pdf",
+                        io.BytesIO(file_content),
+                        "application/pdf",
+                    ),
                 )
-            },
+            ],
         )
 
         assert response.status_code == 200
 
         data = response.json()
 
-        assert data["id"] is not None
+        assert data["total_files"] == 1
+        assert data["successful"] == 1
+        assert data["duplicates"] == 0
+        assert data["failed"] == 0
+        assert len(data["items"]) == 1
 
-        assert data["original_filename"] == "kripa_resume.pdf"
+        item = data["items"][0]
+        assert item["status"] == "success"
+        assert item["filename"] == "kripa_resume.pdf"
+        assert item["candidate_name"] == "Kripa Kumar"
 
-        assert data["file_type"] == "pdf"
-
-        assert data["file_size"] == len(file_content)
-
-        assert len(data["file_hash"]) == 64
-
-        assert data["storage_path"].endswith(".pdf")
-
-        assert data["extracted_text"] is not None
-
-        assert "Kripa Kumar" in data["extracted_text"]
-
-        assert (
-            "Senior PHP Laravel Developer"
-            in data["extracted_text"]
-        )
-
-        assert (
-            "Python GenAI RAG Developer"
-            in data["extracted_text"]
-        )
-
-        assert data["extraction_status"] == "completed"
+        resume = item["resume"]
+        assert resume["id"] is not None
+        assert resume["original_filename"] == "kripa_resume.pdf"
+        assert resume["file_type"] == "pdf"
+        assert resume["file_size"] == len(file_content)
+        assert len(resume["file_hash"]) == 64
+        assert resume["storage_path"].endswith(".pdf")
+        assert resume["extracted_text"] is not None
+        assert "Kripa Kumar" in resume["extracted_text"]
+        assert "Senior PHP Laravel Developer" in resume["extracted_text"]
+        assert "Python GenAI RAG Developer" in resume["extracted_text"]
+        assert resume["extraction_status"] == "completed"
 
         saved_file = (
             tmp_path
-            / Path(data["storage_path"]).name
+            / Path(resume["storage_path"]).name
         )
 
         assert saved_file.exists()
-
         assert saved_file.read_bytes() == file_content
 
     finally:
@@ -121,12 +134,21 @@ def test_upload_duplicate_resume_api(
     monkeypatch,
 ):
     """
-    Same resume uploaded twice should return 409 Conflict.
+    Same resume uploaded twice should be detected as duplicate.
     """
 
     monkeypatch.setattr(
         "app.core.storage.settings.STORAGE_ROOT",
         str(tmp_path),
+    )
+
+    dummy_profile = CandidateProfile(
+        name="Duplicate Test",
+        email="dup@example.com",
+    )
+    monkeypatch.setattr(
+        "app.services.resume_service.ResumeService.extract_candidate_profile",
+        lambda self, text: dummy_profile,
     )
 
     def override_get_db():
@@ -141,49 +163,54 @@ def test_upload_duplicate_resume_api(
             "Duplicate Resume Test"
         )
 
-        # -----------------------------------------------------
         # First upload
-        # -----------------------------------------------------
-
         first_response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "kripa_resume.pdf",
-                    io.BytesIO(file_content),
-                    "application/pdf",
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
+                    (
+                        "kripa_resume.pdf",
+                        io.BytesIO(file_content),
+                        "application/pdf",
+                    ),
                 )
-            },
+            ],
         )
 
         assert first_response.status_code == 200
+        first_data = first_response.json()
+        assert first_data["successful"] == 1
+        assert first_data["duplicates"] == 0
 
-        # -----------------------------------------------------
         # Second upload with same content
-        # -----------------------------------------------------
-
         second_response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "another_name.pdf",
-                    io.BytesIO(file_content),
-                    "application/pdf",
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
+                    (
+                        "another_name.pdf",
+                        io.BytesIO(file_content),
+                        "application/pdf",
+                    ),
                 )
-            },
+            ],
         )
 
-        assert second_response.status_code == 409
+        assert second_response.status_code == 200
+        second_data = second_response.json()
 
-        data = second_response.json()
-
-        assert data["detail"] == (
-            "A resume with the same file already exists."
+        assert second_data["successful"] == 0
+        assert second_data["duplicates"] == 1
+        assert second_data["items"][0]["status"] == "duplicate"
+        assert (
+            "Duplicate resume"
+            in second_data["items"][0]["message"]
         )
 
         # Only one physical file should exist
         stored_files = list(tmp_path.iterdir())
-
         assert len(stored_files) == 1
 
     finally:
@@ -196,7 +223,7 @@ def test_upload_unsupported_file_api(
     monkeypatch,
 ):
     """
-    Unsupported file extension should return 400 Bad Request.
+    Unsupported file extension should result in a failed upload item.
     """
 
     monkeypatch.setattr(
@@ -213,25 +240,28 @@ def test_upload_unsupported_file_api(
         client = TestClient(app)
 
         response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "resume.txt",
-                    io.BytesIO(
-                        b"plain text resume"
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
+                    (
+                        "resume.txt",
+                        io.BytesIO(b"plain text resume"),
+                        "text/plain",
                     ),
-                    "text/plain",
                 )
-            },
+            ],
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
 
         data = response.json()
-
-        assert data["detail"] == (
-            "Unsupported file type. "
-            "Only PDF and DOCX files are allowed."
+        assert data["successful"] == 0
+        assert data["failed"] == 1
+        assert data["items"][0]["status"] == "failed"
+        assert (
+            "Unsupported file type"
+            in data["items"][0]["message"]
         )
 
         # Nothing should be stored
@@ -247,7 +277,7 @@ def test_upload_invalid_pdf_api(
     monkeypatch,
 ):
     """
-    PDF extension with invalid content should return 400.
+    PDF extension with invalid content should report failed item.
     """
 
     monkeypatch.setattr(
@@ -264,24 +294,28 @@ def test_upload_invalid_pdf_api(
         client = TestClient(app)
 
         response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "resume.pdf",
-                    io.BytesIO(
-                        b"This is not a real PDF file"
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
+                    (
+                        "resume.pdf",
+                        io.BytesIO(b"This is not a real PDF file"),
+                        "application/pdf",
                     ),
-                    "application/pdf",
                 )
-            },
+            ],
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200
 
         data = response.json()
-
-        assert data["detail"] == (
-            "Invalid PDF file content."
+        assert data["successful"] == 0
+        assert data["failed"] == 1
+        assert data["items"][0]["status"] == "failed"
+        assert (
+            "Invalid PDF"
+            in data["items"][0]["message"]
         )
 
         # Nothing should be stored
@@ -297,8 +331,8 @@ def test_upload_malformed_docx_api(
     monkeypatch,
 ):
     """
-    DOCX signature may look valid, but malformed DOCX
-    should fail during actual DOCX extraction.
+    DOCX signature passes initial validation, but malformed DOCX
+    fails during extraction and reports failed item.
     """
 
     monkeypatch.setattr(
@@ -314,37 +348,41 @@ def test_upload_malformed_docx_api(
     try:
         client = TestClient(app)
 
-        # PK signature passes initial validation,
-        # but this is not a real DOCX file.
         file_content = (
             b"PK\x03\x04"
             + b"invalid docx content"
         )
 
         response = client.post(
-            "/resumes/upload",
-            files={
-                "file": (
-                    "resume.docx",
-                    io.BytesIO(file_content),
+            "/api/v1/resumes/upload",
+            files=[
+                (
+                    "files",
                     (
-                        "application/vnd.openxmlformats-officedocument"
-                        ".wordprocessingml.document"
+                        "resume.docx",
+                        io.BytesIO(file_content),
+                        (
+                            "application/vnd.openxmlformats-officedocument"
+                            ".wordprocessingml.document"
+                        ),
                     ),
                 )
-            },
+            ],
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 200
 
         data = response.json()
-
-        assert data["detail"] == (
-            "Failed to extract text from DOCX."
+        assert data["successful"] == 0
+        assert data["failed"] == 1
+        assert data["items"][0]["status"] == "failed"
+        assert (
+            "Failed to extract text from DOCX"
+            in data["items"][0]["message"]
         )
 
         # Nothing should be stored
         assert list(tmp_path.iterdir()) == []
 
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.clear()

@@ -1,15 +1,17 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.data.models.candidate_skill import CandidateSkill
+
 
 class CandidateSkillRepository:
     def __init__(self, db: Session):
         self.db = db
 
     def create(
-    self,
-    candidate_id: int,
-    skill_name: str,
+        self,
+        candidate_id: int,
+        skill_name: str,
     ) -> CandidateSkill:
         skill = CandidateSkill(
             candidate_id=candidate_id,
@@ -27,7 +29,9 @@ class CandidateSkillRepository:
     ) -> list[CandidateSkill]:
         statement = (
             select(CandidateSkill)
-            .where(CandidateSkill.candidate_id == candidate_id)
+            .where(
+                CandidateSkill.candidate_id == candidate_id
+            )
             .order_by(CandidateSkill.id)
         )
 
@@ -39,7 +43,9 @@ class CandidateSkillRepository:
         self,
         candidate_id: int,
     ) -> int:
-        skills = self.get_by_candidate_id(candidate_id)
+        skills = self.get_by_candidate_id(
+            candidate_id
+        )
 
         for skill in skills:
             self.db.delete(skill)

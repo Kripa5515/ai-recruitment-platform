@@ -18,24 +18,15 @@ def test_candidate_extractor_returns_structured_profile(
         certifications=[],
     )
 
-    fake_response = SimpleNamespace(
-        output_parsed=expected_profile
-    )
-
-    class FakeResponses:
+    class FakeOpenAIClient:
         def parse(self, **kwargs):
-            return fake_response
-
-    class FakeClient:
-        responses = FakeResponses()
+            return expected_profile
 
     extractor = CandidateExtractor.__new__(
         CandidateExtractor
     )
 
-    extractor.llm = SimpleNamespace(
-        client=FakeClient()
-    )
+    extractor.client = FakeOpenAIClient()
 
     result = extractor.extract(
         "Kripa Kumar is a Senior Developer..."

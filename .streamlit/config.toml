@@ -1,0 +1,42 @@
+[theme]
+
+base = "light"
+
+primaryColor = "#19A86B"
+
+backgroundColor = "#F3FAF6"
+
+secondaryBackgroundColor = "#E8F6EE"
+
+textColor = "#12372A"
+
+font = "Manrope:https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap, sans-serif"
+
+headingFont = "Manrope:https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&display=swap, sans-serif"
+
+baseFontSize = 16
+
+baseFontWeight = 400
+
+showSidebarBorder = true
+
+linkColor = "#128A58"
+
+linkUnderline = false
+
+codeBackgroundColor = "#E8F6EE"
+
+codeTextColor = "#176545"
+
+
+[theme.sidebar]
+
+backgroundColor = "#E8F6EE"
+
+secondaryBackgroundColor = "#DFF2E6"
+
+textColor = "#12372A"
+
+font = "Manrope:https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap, sans-serif"
+
+headingFont = "Manrope:https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&display=swap, sans-serif"

@@ -84,9 +84,11 @@ def test_extract_pdf_text_from_multiple_pages():
 def test_extract_pdf_text_from_empty_pdf():
     pdf_bytes = create_empty_pdf()
 
-    extracted_text = extract_pdf_text(pdf_bytes)
-
-    assert extracted_text == ""
+    with pytest.raises(
+        PDFExtractionError,
+        match="PDF does not contain extractable text.",
+    ):
+        extract_pdf_text(pdf_bytes)
 
 
 def test_extract_pdf_text_with_invalid_pdf():
@@ -106,6 +108,8 @@ def test_extract_pdf_text_from_image_only_pdf():
 
     document.close()
 
-    extracted_text = extract_pdf_text(pdf_bytes)
-
-    assert extracted_text == ""
+    with pytest.raises(
+        PDFExtractionError,
+        match="PDF does not contain extractable text.",
+    ):
+        extract_pdf_text(pdf_bytes)
