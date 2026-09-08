@@ -30,6 +30,18 @@ class MatchingService:
        - Required skills: 40%
        - Semantic similarity: 25%
        - Constraints: 15%
+
+    4. Explainable matching
+       - Human-readable reasons
+       - Missing skills
+       - Experience explanation
+       - Warnings
+       - Overall assessment
+
+    Important:
+    The matching score is calculated by deterministic and
+    semantic logic. Explanations are generated from the
+    calculated results and do not use an LLM.
     """
 
     EXPERIENCE_WEIGHT = 20.0
@@ -138,6 +150,7 @@ class MatchingService:
             skill_match=skill_match,
             semantic_score=semantic_score,
             constraint_score=constraint_score,
+            final_score=final_score,
         )
 
         # ---------------------------------------------------------
@@ -146,6 +159,7 @@ class MatchingService:
         warnings = self._build_warnings(
             experience_match=experience_match,
             skill_match=skill_match,
+            constraint_score=constraint_score,
         )
 
         # ---------------------------------------------------------
@@ -185,27 +199,53 @@ class MatchingService:
         - Missing candidate experience -> 0
         - Candidate meets/exceeds requirement -> 100
         - Otherwise proportional score
+
+        Also generates a human-readable explanation.
         """
 
+        # ---------------------------------------------------------
+        # No experience requirement
+        # ---------------------------------------------------------
         if required_experience is None:
             return ExperienceMatchResult(
                 score=100.0,
-                required_years=None,
-                candidate_years=candidate_experience,
+                required_experience_years=None,
+                candidate_experience_years=candidate_experience,
                 meets_requirement=True,
+                explanation=(
+                    "No specific experience requirement was provided."
+                ),
             )
 
+        # ---------------------------------------------------------
+        # Candidate experience is missing
+        # ---------------------------------------------------------
         if candidate_experience is None:
             return ExperienceMatchResult(
                 score=0.0,
-                required_years=required_experience,
-                candidate_years=None,
+                required_experience_years=required_experience,
+                candidate_experience_years=None,
                 meets_requirement=False,
+                explanation=(
+                    "Candidate experience information is not available."
+                ),
             )
 
+        # ---------------------------------------------------------
+        # Candidate meets or exceeds requirement
+        # ---------------------------------------------------------
         if candidate_experience >= required_experience:
             score = 100.0
             meets_requirement = True
+
+            explanation = (
+                f"Candidate has {candidate_experience:g} years of "
+                f"experience; {required_experience:g} years required."
+            )
+
+        # ---------------------------------------------------------
+        # Candidate is below requirement
+        # ---------------------------------------------------------
         else:
             score = max(
                 0.0,
@@ -214,13 +254,20 @@ class MatchingService:
                     (candidate_experience / required_experience) * 100.0,
                 ),
             )
+
             meets_requirement = False
+
+            explanation = (
+                f"Candidate has {candidate_experience:g} years of "
+                f"experience; {required_experience:g} years required."
+            )
 
         return ExperienceMatchResult(
             score=round(score, 2),
-            required_years=required_experience,
-            candidate_years=candidate_experience,
+            required_experience_years=required_experience,
+            candidate_experience_years=candidate_experience,
             meets_requirement=meets_requirement,
+            explanation=explanation,
         )
 
     # =============================================================
@@ -316,10 +363,6 @@ class MatchingService:
         else:
             preferred_score = 0.0
 
-        # ---------------------------------------------------------
-        # IMPORTANT:
-        # Field names must exactly match SkillMatchResult.
-        # ---------------------------------------------------------
         return SkillMatchResult(
             required_skills=sorted(required_skill_set),
             matched_required_skills=matched_required,
@@ -378,9 +421,9 @@ class MatchingService:
 
         Available weights:
 
-        Experience     = 20
+        Experience      = 20
         Required Skills = 40
-        Constraints    = 15
+        Constraints     = 15
 
         Total            = 75
         """
@@ -447,9 +490,13 @@ class MatchingService:
         skill_match: SkillMatchResult,
         semantic_score: float | None,
         constraint_score: float,
+        final_score: float | None,
     ) -> list[str]:
         """
         Build human-readable explanations for the match.
+
+        These reasons are generated only from calculated matching
+        results. No LLM is used.
         """
 
         reasons: list[str] = []
@@ -457,38 +504,53 @@ class MatchingService:
         # ---------------------------------------------------------
         # Experience reason
         # ---------------------------------------------------------
-        if experience_match.meets_requirement:
-            reasons.append(
-                "Candidate meets the required experience."
-            )
-        else:
-            reasons.append(
-                "Candidate does not fully meet the required experience."
-            )
+        reasons.append(experience_match.explanation)
 
         # ---------------------------------------------------------
         # Required skills reason
         # ---------------------------------------------------------
-        if skill_match.missing_required_skills:
+        total_required = len(skill_match.required_skills)
+        matched_required = len(
+            skill_match.matched_required_skills
+        )
+
+        if total_required == 0:
             reasons.append(
-                "Candidate is missing some required skills."
+                "No required skills were specified."
+            )
+        elif not skill_match.missing_required_skills:
+            reasons.append(
+                f"Candidate matches all {total_required} "
+                "required skills."
             )
         else:
             reasons.append(
-                "Candidate matches all required skills."
+                f"Candidate matches {matched_required} of "
+                f"{total_required} required skills."
             )
 
         # ---------------------------------------------------------
         # Preferred skills reason
         # ---------------------------------------------------------
-        if skill_match.preferred_skills:
-            if skill_match.matched_preferred_skills:
+        total_preferred = len(skill_match.preferred_skills)
+        matched_preferred = len(
+            skill_match.matched_preferred_skills
+        )
+
+        if total_preferred:
+            if matched_preferred == total_preferred:
                 reasons.append(
-                    "Candidate matches some preferred skills."
+                    f"Candidate matches all {total_preferred} "
+                    "preferred skills."
+                )
+            elif matched_preferred:
+                reasons.append(
+                    f"Candidate matches {matched_preferred} of "
+                    f"{total_preferred} preferred skills."
                 )
             else:
                 reasons.append(
-                    "Candidate does not match the preferred skills."
+                    "Candidate does not match any preferred skills."
                 )
 
         # ---------------------------------------------------------
@@ -496,7 +558,8 @@ class MatchingService:
         # ---------------------------------------------------------
         if semantic_score is not None:
             reasons.append(
-                f"Semantic similarity score is {semantic_score:.2f}."
+                f"Resume and job description semantic similarity "
+                f"is {semantic_score:.2f}%."
             )
 
         # ---------------------------------------------------------
@@ -511,6 +574,14 @@ class MatchingService:
                 "Some job constraints may require review."
             )
 
+        # ---------------------------------------------------------
+        # Overall assessment
+        # ---------------------------------------------------------
+        if final_score is not None:
+            reasons.append(
+                self._build_overall_assessment(final_score)
+            )
+
         return reasons
 
     # =============================================================
@@ -521,6 +592,7 @@ class MatchingService:
         self,
         experience_match: ExperienceMatchResult,
         skill_match: SkillMatchResult,
+        constraint_score: float,
     ) -> list[str]:
         """
         Build warnings that HR should review.
@@ -528,14 +600,71 @@ class MatchingService:
 
         warnings: list[str] = []
 
+        # ---------------------------------------------------------
+        # Experience warning
+        # ---------------------------------------------------------
         if not experience_match.meets_requirement:
             warnings.append(
                 "Experience requirement is not fully satisfied."
             )
 
+        # ---------------------------------------------------------
+        # Missing required skills
+        # ---------------------------------------------------------
         if skill_match.missing_required_skills:
+            missing_skills = ", ".join(
+                skill_match.missing_required_skills
+            )
+
             warnings.append(
-                "Required skills are missing."
+                f"Missing required skills: {missing_skills}."
+            )
+
+        # ---------------------------------------------------------
+        # Constraint warning
+        # ---------------------------------------------------------
+        if constraint_score < 100:
+            warnings.append(
+                "Some job constraints may require HR review."
             )
 
         return warnings
+
+    # =============================================================
+    # OVERALL ASSESSMENT
+    # =============================================================
+
+    def _build_overall_assessment(
+        self,
+        final_score: float,
+    ) -> str:
+        """
+        Convert the calculated score into a human-readable
+        assessment.
+
+        This is not a hiring decision. It is only a matching
+        interpretation for recruiter review.
+        """
+
+        if final_score >= 80:
+            return (
+                f"Overall match assessment: Strong Match "
+                f"({final_score:.2f}%)."
+            )
+
+        if final_score >= 60:
+            return (
+                f"Overall match assessment: Good Match "
+                f"({final_score:.2f}%)."
+            )
+
+        if final_score >= 40:
+            return (
+                f"Overall match assessment: Moderate Match "
+                f"({final_score:.2f}%)."
+            )
+
+        return (
+            f"Overall match assessment: Low Match "
+            f"({final_score:.2f}%)."
+        )

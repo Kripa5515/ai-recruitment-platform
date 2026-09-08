@@ -384,9 +384,19 @@ def test_reasons_are_generated_for_matching_candidate(
     )
 
     assert result.reasons
+
     assert any(
-        "meets the required experience"
-        in reason.lower()
+        "6 years of experience" in reason
+        for reason in result.reasons
+    )
+
+    assert any(
+        "5 years required" in reason
+        for reason in result.reasons
+    )
+
+    assert any(
+        "matches all 3 required skills" in reason
         for reason in result.reasons
     )
 
@@ -409,8 +419,17 @@ def test_warning_generated_for_missing_required_skill(
     assert result.warnings
 
     assert any(
-        "required skills are missing"
-        in warning.lower()
+        "missing required skills:" in warning.lower()
+        for warning in result.warnings
+    )
+
+    assert any(
+        "fastapi" in warning.lower()
+        for warning in result.warnings
+    )
+
+    assert any(
+        "postgresql" in warning.lower()
         for warning in result.warnings
     )
 
